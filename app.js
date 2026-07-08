@@ -3477,6 +3477,26 @@ window.addEventListener('load', () => {
 // CUSTOM CLIENT-SIDE ROUTER & DYNAMIC TRANSITIONS
 // =========================================================================
 
+const ROUTE_PAGE_ALIASES = new Map([
+    ['/index.html', '/'],
+    ['/index.min.html', '/'],
+    ['/danh-sach.html', '/danh-sach'],
+    ['/danh-sach.min.html', '/danh-sach'],
+    ['/phim.html', '/phim'],
+    ['/phim.min.html', '/phim'],
+    ['/xem-phim.html', '/xem-phim'],
+    ['/xem-phim.min.html', '/xem-phim'],
+    ['/tu-phim.html', '/tu-phim'],
+    ['/tu-phim.min.html', '/tu-phim']
+]);
+
+function normalizeRouteUrl(urlStr) {
+    const url = new URL(urlStr, window.location.href);
+    const normalizedPath = url.pathname.replace(/\/{2,}/g, '/');
+    url.pathname = ROUTE_PAGE_ALIASES.get(normalizedPath) || normalizedPath;
+    return url;
+}
+
 function shouldHandleLink(link) {
     const href = link.getAttribute('href');
     if (!href || href.startsWith('#') || href.startsWith('javascript:')) return false;
@@ -3501,7 +3521,7 @@ function shouldHandleLink(link) {
 
 async function prefetchPageHTML(urlStr) {
     try {
-        const targetUrl = new URL(urlStr, window.location.href);
+        const targetUrl = normalizeRouteUrl(urlStr);
         const cacheKey = targetUrl.pathname.replace(/\.min\.html$/, '.html').replace(/\.html$/, '');
         if (pageCache.has(cacheKey)) return;
 
@@ -3517,7 +3537,7 @@ async function prefetchPageHTML(urlStr) {
 
 function prefetchLinkResources(urlStr) {
     try {
-        const targetUrl = new URL(urlStr, window.location.href);
+        const targetUrl = normalizeRouteUrl(urlStr);
         
         prefetchPageHTML(urlStr);
 
@@ -3598,6 +3618,8 @@ function finishNavigation() {
 }
 
 async function navigateToPage(urlStr, push = true) {
+    let targetUrl;
+
     if (isNavigating) {
         pendingNavigation = { urlStr, push };
         prefetchLinkResources(urlStr);
@@ -3606,7 +3628,7 @@ async function navigateToPage(urlStr, push = true) {
     isNavigating = true;
 
     try {
-        const targetUrl = new URL(urlStr, window.location.href);
+        targetUrl = normalizeRouteUrl(urlStr);
         const path = targetUrl.pathname;
         const pageName = path.split('/').pop().replace(/\.html$/, '').replace(/\.min$/, '');
         const cacheKey = path.replace(/\.min\.html$/, '.html').replace(/\.html$/, '');
@@ -3621,7 +3643,7 @@ async function navigateToPage(urlStr, push = true) {
 
         const mainEl = document.querySelector('main.main-content');
         if (!mainEl) {
-            window.location.href = urlStr;
+            window.location.href = targetUrl.pathname + targetUrl.search;
             finishNavigation();
             return;
         }
@@ -3633,7 +3655,7 @@ async function navigateToPage(urlStr, push = true) {
             const newMain = doc.querySelector('main.main-content');
             if (!newMain) {
                 console.error('Target page lacks <main.main-content>');
-                window.location.href = urlStr;
+                window.location.href = targetUrl.pathname + targetUrl.search;
                 finishNavigation();
                 return;
             }
@@ -3712,7 +3734,8 @@ async function navigateToPage(urlStr, push = true) {
 
     } catch (e) {
         console.error('Navigation error, falling back to full reload:', e);
-        window.location.href = urlStr;
+        if (!targetUrl) targetUrl = normalizeRouteUrl(urlStr);
+        window.location.href = targetUrl.pathname + targetUrl.search;
         finishNavigation();
     }
 }

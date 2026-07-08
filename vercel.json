@@ -1,6 +1,5 @@
 {
     "version": 2,
-    "cleanUrls": true,
     "headers": [
         {
             "source": "/app.min.js",
@@ -250,7 +249,15 @@
             "destination": "/index.min.html"
         },
         {
+            "source": "/index",
+            "destination": "/index.min.html"
+        },
+        {
             "source": "/danh-sach",
+            "destination": "/danh-sach.min.html"
+        },
+        {
+            "source": "/danh-sach.html",
             "destination": "/danh-sach.min.html"
         },
         {
@@ -258,7 +265,15 @@
             "destination": "/phim.min.html"
         },
         {
+            "source": "/phim.html",
+            "destination": "/phim.min.html"
+        },
+        {
             "source": "/xem-phim",
+            "destination": "/xem-phim.min.html"
+        },
+        {
+            "source": "/xem-phim.html",
             "destination": "/xem-phim.min.html"
         },
         {
@@ -266,7 +281,15 @@
             "destination": "/tu-phim.min.html"
         },
         {
+            "source": "/tu-phim.html",
+            "destination": "/tu-phim.min.html"
+        },
+        {
             "source": "/security-locked",
+            "destination": "/security-locked.min.html"
+        },
+        {
+            "source": "/security-locked.html",
             "destination": "/security-locked.min.html"
         }
     ]
