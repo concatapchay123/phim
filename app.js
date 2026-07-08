@@ -970,7 +970,6 @@ const introPreloader = {
     maxWait: 5500,
     reducedMinDuration: 500,
     reducedMaxWait: 1500,
-    statusTimers: [],
 
     start(pageReadyPromise, targetUrl) {
         const loader = document.getElementById('qcIntroLoader');
@@ -982,15 +981,10 @@ const introPreloader = {
         }
 
         document.body.classList.add('qc-intro-lock');
-        const status = document.getElementById('qcIntroStatus');
         const reduceMotion = window.matchMedia &&
             window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         const minDelay = this.delay(reduceMotion ? this.reducedMinDuration : this.minDuration);
         const timeoutDelay = this.delay(reduceMotion ? this.reducedMaxWait : this.maxWait);
-
-        this.setStatus(status, 'Dang tai logo...');
-        this.queueStatus(status, 'Dang lay danh sach phim...', 650);
-        this.queueStatus(status, 'Dang lam nong phong chieu...', 1350);
 
         const coreReady = Promise.allSettled([
             this.preloadLogo(),
@@ -1002,7 +996,7 @@ const introPreloader = {
             minDelay,
             Promise.race([coreReady, timeoutDelay])
         ]).then(() => {
-            this.finish(loader, status);
+            this.finish(loader);
         });
     },
 
@@ -1041,18 +1035,7 @@ const introPreloader = {
         return new Promise(resolve => setTimeout(resolve, duration));
     },
 
-    queueStatus(status, message, delayMs) {
-        this.statusTimers.push(setTimeout(() => this.setStatus(status, message), delayMs));
-    },
-
-    setStatus(status, message) {
-        if (status) status.textContent = message;
-    },
-
-    finish(loader, status) {
-        this.statusTimers.forEach(timer => clearTimeout(timer));
-        this.statusTimers = [];
-        this.setStatus(status, 'San sang de chill.');
+    finish(loader) {
         try {
             sessionStorage.setItem(this.sessionKey, '1');
         } catch (error) {
