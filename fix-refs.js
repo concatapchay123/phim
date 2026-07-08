@@ -2,7 +2,8 @@ const fs = require('fs');
 const path = require('path');
 
 const files = ['index.min.html', 'danh-sach.min.html', 'phim.min.html', 'xem-phim.min.html', 'tu-phim.min.html', 'security-locked.min.html'];
-const appVersion = '1.0.14';
+const appVersion = '1.0.15';
+const styleVersion = '1.0.5';
 
 files.forEach(file => {
     const htmlFile = path.join(__dirname, file);
@@ -14,7 +15,8 @@ files.forEach(file => {
     let content = fs.readFileSync(htmlFile, 'utf-8');
 
     // Replace references to use minified versions
-    content = content.replace(/style\.css/g, 'style.min.css');
+    content = content.replace(/"style(?:\.min)?\.css(?:\?v=[^"]*)?"/g, `"style.min.css?v=${styleVersion}"`);
+    content = content.replace(/'style(?:\.min)?\.css(?:\?v=[^']*)?'/g, `'style.min.css?v=${styleVersion}'`);
     content = content.replace(/"app(?:\.min)?\.js(?:\?v=[^"]*)?"/g, `"app.min.js?v=${appVersion}"`);
     content = content.replace(/'app(?:\.min)?\.js(?:\?v=[^']*)?'/g, `'app.min.js?v=${appVersion}'`);
     
