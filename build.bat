@@ -5,7 +5,7 @@ echo ========================================
 
 echo.
 echo [1/6] Minifying app.js with Terser ...
-call npx -y terser app.js -o app.min.js --compress drop_debugger=false,passes=2 --mangle --toplevel --comments false
+call npx -y terser app.js -o app.min.js --compress drop_debugger=true,passes=2 --mangle --toplevel --comments false
 if errorlevel 1 (echo ERROR: JS minification failed! & exit /b 1)
 echo      Done!
 

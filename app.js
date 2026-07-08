@@ -5,7 +5,7 @@
 // =========================================================================
 // CONFIGURATION & CONSTANTS
 // =========================================================================
-const API_CACHE_PREFIX = 'qc_cache_v4_';
+const API_CACHE_PREFIX = 'qc_cache_v5_';
 const OP_HOME = 'a';
 const OP_PHIM_BO = 'b';
 const OP_PHIM_LE = 'c';
@@ -226,17 +226,29 @@ const API_CACHE_TTL = {
     taxonomy: 24 * 60 * 60 * 1000
 };
 
+const API_CACHE_STALE_TTL = {
+    default: 2 * 60 * 60 * 1000,
+    catalog: 24 * 60 * 60 * 1000,
+    search: 30 * 60 * 1000,
+    detail: 7 * 24 * 60 * 60 * 1000,
+    images: 7 * 24 * 60 * 60 * 1000,
+    taxonomy: 14 * 24 * 60 * 60 * 1000
+};
+
+const API_CACHE_MAX_ENTRIES = 90;
+
 const PREFETCH_CONFIG = {
-    gridPagesAhead: 3,
-    maxQueueSize: 36,
-    maxRequestsPerPage: 48,
-    delayMs: 360,
-    dropdownPreviewLimit: 8,
-    homeDeckPreviewLimit: 7
+    gridPagesAhead: 2,
+    maxQueueSize: 22,
+    maxRequestsPerPage: 18,
+    delayMs: 720,
+    dropdownPreviewLimit: 4,
+    homeDeckPreviewLimit: 4
 };
 
 const apiInFlightRequests = new Map();
 let prefetchRequestsUsed = 0;
+let preferredApiCacheStorage = null;
 
 function getConnectionInfo() {
     return navigator.connection || navigator.mozConnection || navigator.webkitConnection || null;
@@ -258,6 +270,43 @@ function getApiCacheTTL(endpoint) {
     return API_CACHE_TTL.default;
 }
 
+function getApiStaleTTL(endpoint) {
+    if (endpoint === OP_GENRES || endpoint === OP_COUNTRIES) return API_CACHE_STALE_TTL.taxonomy;
+    if (endpoint === OP_DETAILS) return API_CACHE_STALE_TTL.detail;
+    if (endpoint === OP_IMAGES) return API_CACHE_STALE_TTL.images;
+    if (endpoint === OP_SEARCH) return API_CACHE_STALE_TTL.search;
+    if ([OP_HOME, OP_PHIM_BO, OP_PHIM_LE, OP_PHIM_CHIEU_RAP, OP_GENRE, OP_COUNTRY].includes(endpoint)) {
+        return API_CACHE_STALE_TTL.catalog;
+    }
+    return API_CACHE_STALE_TTL.default;
+}
+
+function getApiCacheStorage() {
+    if (preferredApiCacheStorage) return preferredApiCacheStorage;
+
+    try {
+        const testKey = `${API_CACHE_PREFIX}storage_test`;
+        localStorage.setItem(testKey, '1');
+        localStorage.removeItem(testKey);
+        preferredApiCacheStorage = localStorage;
+    } catch (_) {
+        preferredApiCacheStorage = sessionStorage;
+    }
+
+    return preferredApiCacheStorage;
+}
+
+function forEachApiCacheStorage(callback) {
+    const storages = [];
+    try {
+        if (localStorage) storages.push(localStorage);
+    } catch (_) {}
+    try {
+        if (sessionStorage && !storages.includes(sessionStorage)) storages.push(sessionStorage);
+    } catch (_) {}
+    storages.forEach(callback);
+}
+
 function buildApiRequest(endpoint, params = {}) {
     const proxyUrl = new URL(ROUTE_CLIENT, window.location.origin);
     proxyUrl.searchParams.append('q', endpoint);
@@ -276,19 +325,21 @@ function buildApiRequest(endpoint, params = {}) {
 
 function pruneApiCache(maxEntriesToRemove = 20) {
     try {
-        const entries = Object.keys(sessionStorage)
+        const storage = getApiCacheStorage();
+        const entries = Object.keys(storage)
             .filter(key => key.startsWith(API_CACHE_PREFIX))
             .map(key => {
                 try {
-                    const parsed = JSON.parse(sessionStorage.getItem(key));
-                    return { key, expiresAt: Number(parsed?.expiresAt || 0) };
+                    const parsed = JSON.parse(storage.getItem(key));
+                    return { key, expiresAt: Number(parsed?.expiresAt || 0), staleExpiresAt: Number(parsed?.staleExpiresAt || 0) };
                 } catch (error) {
-                    return { key, expiresAt: 0 };
+                    return { key, expiresAt: 0, staleExpiresAt: 0 };
                 }
             })
-            .sort((a, b) => a.expiresAt - b.expiresAt);
+            .sort((a, b) => (a.staleExpiresAt || a.expiresAt) - (b.staleExpiresAt || b.expiresAt));
 
-        entries.slice(0, maxEntriesToRemove).forEach(entry => sessionStorage.removeItem(entry.key));
+        const overflow = Math.max(0, entries.length - API_CACHE_MAX_ENTRIES);
+        entries.slice(0, Math.max(maxEntriesToRemove, overflow)).forEach(entry => storage.removeItem(entry.key));
     } catch (error) {
         console.warn('API cache prune failed:', error);
     }
@@ -296,7 +347,8 @@ function pruneApiCache(maxEntriesToRemove = 20) {
 
 function readApiCache(cacheKey, options = {}) {
     try {
-        const cached = sessionStorage.getItem(cacheKey);
+        const storage = getApiCacheStorage();
+        const cached = storage.getItem(cacheKey);
         if (!cached) return null;
 
         const parsed = JSON.parse(cached);
@@ -306,14 +358,17 @@ function readApiCache(cacheKey, options = {}) {
             Object.prototype.hasOwnProperty.call(parsed, 'expiresAt');
 
         if (!isCacheEnvelope) {
-            sessionStorage.removeItem(cacheKey);
+            storage.removeItem(cacheKey);
             return null;
         }
 
-        const isFresh = Number(parsed.expiresAt || 0) > Date.now();
-        if (isFresh || options.allowStale) return parsed.data;
+        const currentTime = Date.now();
+        const expiresAt = Number(parsed.expiresAt || 0);
+        const staleExpiresAt = Number(parsed.staleExpiresAt || (expiresAt + API_CACHE_TTL.default * 6));
+        const isFresh = expiresAt > currentTime;
+        if (isFresh || (options.allowStale && staleExpiresAt > currentTime)) return parsed.data;
 
-        sessionStorage.removeItem(cacheKey);
+        if (staleExpiresAt <= currentTime) storage.removeItem(cacheKey);
         return null;
     } catch (error) {
         console.warn('API cache read failed:', error);
@@ -323,16 +378,27 @@ function readApiCache(cacheKey, options = {}) {
 
 function writeApiCache(cacheKey, data, endpoint) {
     try {
+        const storage = getApiCacheStorage();
+        const currentTime = Date.now();
+        const freshTtl = getApiCacheTTL(endpoint);
         const payload = {
-            expiresAt: Date.now() + getApiCacheTTL(endpoint),
+            cachedAt: currentTime,
+            expiresAt: currentTime + freshTtl,
+            staleExpiresAt: currentTime + freshTtl + getApiStaleTTL(endpoint),
             data
         };
-        sessionStorage.setItem(cacheKey, JSON.stringify(payload));
+        storage.setItem(cacheKey, JSON.stringify(payload));
+        pruneApiCache(0);
     } catch (error) {
         pruneApiCache();
         try {
-            sessionStorage.setItem(cacheKey, JSON.stringify({
-                expiresAt: Date.now() + getApiCacheTTL(endpoint),
+            const storage = getApiCacheStorage();
+            const currentTime = Date.now();
+            const freshTtl = getApiCacheTTL(endpoint);
+            storage.setItem(cacheKey, JSON.stringify({
+                cachedAt: currentTime,
+                expiresAt: currentTime + freshTtl,
+                staleExpiresAt: currentTime + freshTtl + getApiStaleTTL(endpoint),
                 data
             }));
         } catch (retryError) {
@@ -376,10 +442,12 @@ function warmMovieIntent(movie, options = {}) {
 
 function purgeLegacyApiCache() {
     try {
-        Object.keys(sessionStorage).forEach(key => {
-            if (key.startsWith('qc_cache_') && !key.startsWith(API_CACHE_PREFIX)) {
-                sessionStorage.removeItem(key);
-            }
+        forEachApiCacheStorage(storage => {
+            Object.keys(storage).forEach(key => {
+                if (key.startsWith('qc_cache_') && !key.startsWith(API_CACHE_PREFIX)) {
+                    storage.removeItem(key);
+                }
+            });
         });
     } catch (error) {
         console.warn('Legacy API cache cleanup failed:', error);
@@ -464,9 +532,9 @@ function initClientSecurityDeterrents() {
     const lockBroadcastKey = 'qc_security_lock_ping';
     const serverLockEndpoint = '/api/security-lock';
     const hardLockPath = '/security-locked';
-    const lockDuration = 3500;
-    const serverLockDuration = 20000;
-    const checkInterval = 600;
+    const lockDuration = 60000;
+    const serverLockDuration = 120000;
+    const checkInterval = 350;
     const shieldMarkup = '<div><strong style="display:block;font-size:clamp(22px,4vw,34px);font-weight:800">Trang đã tạm khóa</strong><p style="margin:12px 0 0;color:#cbd5e1;font-size:16px;line-height:1.55">Đóng công cụ kiểm tra để tiếp tục sử dụng website.</p></div>';
     const hardLockMarkup = '<main class="qc-hardlock-shell" role="alert" aria-live="assertive"><section><div class="qc-hardlock-mark">LOCKED</div><h1>Trang đã bị khóa</h1><p>Hệ thống đã phát hiện công cụ kiểm tra hoặc hành vi khai thác. Đóng các công cụ này và tải lại trang sau ít phút.</p></section></main>';
     const hardLockCss = 'html,body{width:100%;height:100%;margin:0;background:#05070d;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;overflow:hidden}.qc-hardlock-shell{min-height:100%;display:grid;place-items:center;padding:24px;box-sizing:border-box;text-align:center}.qc-hardlock-shell section{max-width:560px}.qc-hardlock-mark{display:inline-grid;place-items:center;height:34px;padding:0 12px;border:1px solid rgba(248,113,113,.55);color:#fecaca;background:rgba(127,29,29,.35);font-size:12px;font-weight:800;letter-spacing:.14em;margin-bottom:18px}h1{font-size:clamp(28px,6vw,48px);line-height:1.05;margin:0 0 14px}p{margin:0;color:#cbd5e1;font-size:16px;line-height:1.65}';
@@ -493,7 +561,6 @@ function initClientSecurityDeterrents() {
     let recoveryTimer = null;
     let viewportSignalCount = 0;
     let consoleSignalCount = 0;
-    let debuggerSignalCount = 0;
     let inMemoryLockUntil = 0;
     let lastSignalReportAt = 0;
     let hardLockRedirectTimer = null;
@@ -533,7 +600,7 @@ function initClientSecurityDeterrents() {
         if (currentTime - lastSignalReportAt < 1800) return;
         lastSignalReportAt = currentTime;
 
-        const endpoint = `${serverLockEndpoint}?reason=${encodeURIComponent(reason)}`;
+        const endpoint = `${serverLockEndpoint}?reason=${encodeURIComponent(reason)}&s=${Math.ceil(serverLockDuration / 1000)}`;
         try {
             if (navigator.sendBeacon) {
                 const payload = new Blob(['1'], { type: 'text/plain' });
@@ -586,8 +653,10 @@ function initClientSecurityDeterrents() {
                 document.body.dataset.securityLocked = '1';
             }
             try {
-                Object.keys(sessionStorage).forEach(key => {
-                    if (key.startsWith(API_CACHE_PREFIX)) sessionStorage.removeItem(key);
+                forEachApiCacheStorage(storage => {
+                    Object.keys(storage).forEach(key => {
+                        if (key.startsWith(API_CACHE_PREFIX)) storage.removeItem(key);
+                    });
                 });
             } catch (_) {}
         } catch (_) {}
@@ -772,8 +841,7 @@ function initClientSecurityDeterrents() {
             return true;
         }
 
-        const consoleSignal = detectConsoleInspection();
-        return consoleSignal || detectDebuggerPause();
+        return detectConsoleInspection();
     };
 
     const scheduleRecoveryCheck = (delay = 250) => {
@@ -825,15 +893,6 @@ function initClientSecurityDeterrents() {
         activateSecurityLock(lockDuration, 'shortcut');
     }, true);
 
-    const detectDebuggerPause = () => {
-        if (document.visibilityState === 'hidden') return false;
-        const startedAt = performance.now();
-        debugger;
-        const paused = performance.now() - startedAt > 250;
-        debuggerSignalCount = paused ? Math.min(debuggerSignalCount + 1, 3) : 0;
-        return debuggerSignalCount >= 2;
-    };
-
     const detectDockedDevtools = () => {
         if (document.visibilityState === 'hidden') return false;
         const widthGap = Math.abs(window.outerWidth - window.innerWidth);
@@ -843,7 +902,7 @@ function initClientSecurityDeterrents() {
         const strongGap = widthGap > widthThreshold * 1.45 || heightGap > heightThreshold * 1.45;
         const hasLargeGap = widthGap > widthThreshold || heightGap > heightThreshold;
         viewportSignalCount = hasLargeGap ? Math.min(viewportSignalCount + 1, 4) : Math.max(viewportSignalCount - 1, 0);
-        return viewportSignalCount >= (strongGap ? 2 : 3);
+        return strongGap || viewportSignalCount >= 2;
     };
 
     const detectConsoleInspection = () => {
@@ -871,8 +930,7 @@ function initClientSecurityDeterrents() {
         return consoleSignalCount >= 3;
     };
 
-    const browserExtensionPattern = /^(?:chrome|moz|ms-browser|safari-web)-extension:/i;
-    const suspiciousResourcePattern = /^devtools:/i;
+    const suspiciousResourcePattern = /^(?:devtools:|chrome-extension:|moz-extension:|ms-browser-extension:|safari-web-extension:)/i;
 
     const getNodeResourceUrl = node => {
         if (!node || node.nodeType !== 1) return '';
@@ -934,7 +992,7 @@ function initClientSecurityDeterrents() {
 
     document.addEventListener('securitypolicyviolation', event => {
         const blockedURI = String(event.blockedURI || '');
-        if (!blockedURI || blockedURI === 'inline' || browserExtensionPattern.test(blockedURI)) return;
+        if (!blockedURI || blockedURI === 'inline') return;
         if (suspiciousResourcePattern.test(blockedURI)) activateSecurityLock(lockDuration, 'devtools-resource');
     });
 
@@ -1076,6 +1134,23 @@ document.addEventListener('DOMContentLoaded', () => {
 // =========================================================================
 // API CORE SERVICE
 // =========================================================================
+async function fetchApiFromNetwork(url, cacheKey, endpoint) {
+    const response = await fetch(url, {
+        headers: { 'Accept': 'application/json' },
+        credentials: 'same-origin',
+        referrerPolicy: 'same-origin'
+    });
+    if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
+
+    const data = await response.json();
+
+    if (data && (data.status === 'success' || data.status === true || data.data)) {
+        writeApiCache(cacheKey, data, endpoint);
+    }
+
+    return data;
+}
+
 async function fetchAPI(endpoint, params = {}) {
     const { url, cacheKey } = buildApiRequest(endpoint, params);
 
@@ -1083,29 +1158,21 @@ async function fetchAPI(endpoint, params = {}) {
         const cached = readApiCache(cacheKey);
         if (cached) return cached;
 
+        const stale = readApiCache(cacheKey, { allowStale: true });
+
         if (apiInFlightRequests.has(cacheKey)) {
-            return apiInFlightRequests.get(cacheKey);
+            return stale || apiInFlightRequests.get(cacheKey);
         }
 
-        const requestPromise = (async () => {
-            const response = await fetch(url, {
-                headers: { 'Accept': 'application/json' },
-                credentials: 'same-origin',
-                referrerPolicy: 'same-origin'
-            });
-            if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
-
-            const data = await response.json();
-            
-            // Save to cache if data is valid
-            if (data && (data.status === 'success' || data.status === true || data.data)) {
-                writeApiCache(cacheKey, data, endpoint);
-            }
-
-            return data;
-        })();
+        const requestPromise = fetchApiFromNetwork(url, cacheKey, endpoint);
 
         apiInFlightRequests.set(cacheKey, requestPromise);
+        requestPromise.finally(() => {
+            apiInFlightRequests.delete(cacheKey);
+        }).catch(() => {});
+
+        if (stale) return stale;
+
         try {
             return await requestPromise;
         } finally {
@@ -1449,7 +1516,7 @@ async function loadHomePage() {
     ].filter(row => row.container);
 
     homeRows.forEach(row => {
-        const cached = getCachedApiData(row.endpoint, row.params);
+        const cached = getCachedApiData(row.endpoint, row.params, { allowStale: true });
         if (cached) {
             renderRow(cached, row.container);
         } else {
@@ -1841,7 +1908,7 @@ async function loadGrid(type, keyword = '', page = 1) {
 
     renderActiveFilterChips();
 
-    const cachedData = endpoint ? getCachedApiData(endpoint, params) : null;
+    const cachedData = endpoint ? getCachedApiData(endpoint, params, { allowStale: true }) : null;
     if (cachedData && cachedData.data) {
         elements.gridLoader.classList.add('hidden');
         renderGridResponse(cachedData, type, page, endpoint, params);
@@ -1982,9 +2049,9 @@ async function fetchMovieDetails(slug) {
     elements.modalBody.innerHTML = '';
     elements.closeModalBtn.focus();
 
-    const cachedData = getCachedApiData(OP_DETAILS, { slug });
+    const cachedData = getCachedApiData(OP_DETAILS, { slug }, { allowStale: true });
     if (cachedData && cachedData.data && cachedData.data.item) {
-        const cachedImages = selectTmdbImages(getCachedApiData(OP_IMAGES, { slug }));
+        const cachedImages = selectTmdbImages(getCachedApiData(OP_IMAGES, { slug }, { allowStale: true }));
         elements.modalLoading.classList.add('hidden');
         renderMovieDetails(cachedData.data.item, cachedImages.backdrop, cachedImages.poster);
         return;
@@ -2855,9 +2922,9 @@ async function fetchMovieDetailsPage(slug) {
     if (!detailsBody) return;
 
     detailsBody.innerHTML = '';
-    const cachedData = getCachedApiData(OP_DETAILS, { slug });
+    const cachedData = getCachedApiData(OP_DETAILS, { slug }, { allowStale: true });
     if (cachedData && cachedData.data && cachedData.data.item) {
-        const cachedImages = selectTmdbImages(getCachedApiData(OP_IMAGES, { slug }));
+        const cachedImages = selectTmdbImages(getCachedApiData(OP_IMAGES, { slug }, { allowStale: true }));
         if (detailsLoading) detailsLoading.classList.add('hidden');
         renderMovieDetailsPage(cachedData.data.item, cachedImages.backdrop, cachedImages.poster);
         return;
@@ -3069,9 +3136,9 @@ async function playMovieFromSlugPage(slug, episodeIndex = 0, serverIndex = 0) {
     const playerBody = document.getElementById('playerBody');
     if (!playerBody) return;
 
-    const cachedData = getCachedApiData(OP_DETAILS, { slug });
+    const cachedData = getCachedApiData(OP_DETAILS, { slug }, { allowStale: true });
     if (cachedData && cachedData.data && cachedData.data.item) {
-        const cachedImages = selectTmdbImages(getCachedApiData(OP_IMAGES, { slug }));
+        const cachedImages = selectTmdbImages(getCachedApiData(OP_IMAGES, { slug }, { allowStale: true }));
         renderMoviePlayerPage(cachedData.data.item, episodeIndex, serverIndex, cachedImages.backdrop);
         return;
     }
@@ -3350,6 +3417,7 @@ function queueApiPrefetch(endpoint, params = {}, options = {}) {
     try {
         const priority = Number(options.priority || 0);
         if (shouldUseConservativeNetworkMode() && !options.allowOnSlow) return;
+        if (document.visibilityState === 'hidden' && priority < 9) return;
 
         const { cacheKey } = buildApiRequest(endpoint, params);
         if (readApiCache(cacheKey) || apiInFlightRequests.has(cacheKey)) return;
@@ -3379,6 +3447,11 @@ function triggerPrefetchQueue() {
     if (prefetchTimeout) return;
 
     prefetchTimeout = setTimeout(() => {
+        if (document.visibilityState === 'hidden') {
+            prefetchTimeout = null;
+            return;
+        }
+
         if (prefetchQueue.length === 0) {
             prefetchTimeout = null;
             return;
@@ -3471,6 +3544,10 @@ function initPrefetchSystem() {
 
 window.addEventListener('load', () => {
     setTimeout(initPrefetchSystem, 2000);
+});
+
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') triggerPrefetchQueue();
 });
 
 // =========================================================================

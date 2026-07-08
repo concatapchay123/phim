@@ -4,6 +4,7 @@ const path = require('path');
 const url = require('url');
 
 const {
+    API_BASE_URL,
     buildClientApiUrl,
     buildUpstreamApiUrl,
     checkRateLimit,
@@ -39,7 +40,98 @@ const CLIENT_CACHE_BY_KIND = {
 
 function getClientCacheControl(kind) {
     const cache = CLIENT_CACHE_BY_KIND[String(kind || '')] || { ttl: 300, stale: 60 };
-    return `public, s-maxage=${cache.ttl}, stale-while-revalidate=${cache.stale}`;
+    const browserMaxAge = Math.min(90, Math.max(20, Math.floor(cache.ttl / 6)));
+    return `public, max-age=${browserMaxAge}, s-maxage=${cache.ttl}, stale-while-revalidate=${cache.stale}`;
+}
+
+const FALLBACK_API_BASE_URL = (process.env.FALLBACK_MOVIE_API_BASE_URL || 'https://phimapi.com').replace(/\/+$/, '');
+const UPSTREAM_TIMEOUT_MS = Math.max(900, Number(process.env.MOVIE_API_TIMEOUT_MS || 2600));
+const FALLBACK_TIMEOUT_MS = Math.max(1200, Number(process.env.FALLBACK_MOVIE_API_TIMEOUT_MS || 3600));
+const RESPONSE_CACHE_MAX_ENTRIES = Math.max(50, Number(process.env.API_RESPONSE_CACHE_MAX_ENTRIES || 220));
+const responseCache = new Map();
+
+function getClientCachePolicy(kind) {
+    return CLIENT_CACHE_BY_KIND[String(kind || '')] || { ttl: 300, stale: 60 };
+}
+
+function getMemoryCache(cacheKey) {
+    const cached = responseCache.get(cacheKey);
+    if (!cached) return null;
+
+    const now = Date.now();
+    if (cached.expiresAt > now) return { state: 'fresh', data: cached.data };
+    if (cached.staleExpiresAt > now) return { state: 'stale', data: cached.data };
+
+    responseCache.delete(cacheKey);
+    return null;
+}
+
+function setMemoryCache(cacheKey, data, kind) {
+    const policy = getClientCachePolicy(kind);
+    const now = Date.now();
+    responseCache.set(cacheKey, {
+        data,
+        expiresAt: now + policy.ttl * 1000,
+        staleExpiresAt: now + (policy.ttl + policy.stale) * 1000
+    });
+
+    if (responseCache.size > RESPONSE_CACHE_MAX_ENTRIES) {
+        const overflow = responseCache.size - RESPONSE_CACHE_MAX_ENTRIES;
+        Array.from(responseCache.keys()).slice(0, overflow).forEach(key => responseCache.delete(key));
+    }
+}
+
+function buildFallbackUrl(primaryUrl) {
+    if (!FALLBACK_API_BASE_URL || FALLBACK_API_BASE_URL === API_BASE_URL) return null;
+    return new URL(`${FALLBACK_API_BASE_URL}${primaryUrl.pathname}${primaryUrl.search}`);
+}
+
+async function fetchJsonWithTimeout(targetUrl, timeoutMs) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+        const response = await fetch(targetUrl.toString(), {
+            signal: controller.signal,
+            headers: {
+                Accept: 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+        });
+
+        if (!response.ok) {
+            const error = new Error(`Upstream error: ${response.status}`);
+            error.statusCode = response.status;
+            throw error;
+        }
+
+        return response.json();
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+async function fetchUpstreamJson(primaryUrl) {
+    try {
+        return await fetchJsonWithTimeout(primaryUrl, UPSTREAM_TIMEOUT_MS);
+    } catch (primaryError) {
+        const fallbackUrl = buildFallbackUrl(primaryUrl);
+        const canFallback = fallbackUrl && (!primaryError.statusCode || primaryError.statusCode >= 500 || primaryError.name === 'AbortError');
+        if (!canFallback) throw primaryError;
+
+        try {
+            return await fetchJsonWithTimeout(fallbackUrl, FALLBACK_TIMEOUT_MS);
+        } catch (fallbackError) {
+            fallbackError.statusCode = fallbackError.statusCode || primaryError.statusCode;
+            throw fallbackError;
+        }
+    }
+}
+
+function refreshMemoryCache(cacheKey, targetUrl, kind) {
+    fetchUpstreamJson(targetUrl)
+        .then(data => setMemoryCache(cacheKey, sanitizeUpstreamData(data), kind))
+        .catch(error => console.warn('Client API background refresh failed:', error.message));
 }
 
 const MIME_TYPES = {
@@ -183,7 +275,8 @@ async function handleSecurityLock(req, res, query = {}) {
     }
 
     const lock = setSecurityLockCookie(req, res, {
-        reason: query.reason || req.headers['x-qc-security-signal'] || 'client-signal'
+        reason: query.reason || req.headers['x-qc-security-signal'] || 'client-signal',
+        seconds: query.s
     });
     res.setHeader('X-QC-Security-Lock-Until', String(lock.expiresAt));
     res.writeHead(204);
@@ -255,9 +348,11 @@ async function handleApiProxy(req, res, apiPath, params, prefix) {
 }
 
 async function handleClientApi(req, res, query) {
+    const kind = query.q || query.kind;
     setSecurityHeaders(res, {
-        cacheControl: getClientCacheControl(query.q || query.kind)
+        cacheControl: getClientCacheControl(kind)
     });
+    res.setHeader('Vary', 'Cookie');
 
     if (req.method === 'OPTIONS') {
         res.setHeader('Allow', 'GET, OPTIONS');
@@ -292,21 +387,21 @@ async function handleClientApi(req, res, query) {
     }
 
     try {
-        const targetUrl = buildClientApiUrl(query.q || query.kind, query);
-        const response = await fetch(targetUrl.toString(), {
-            headers: {
-                Accept: 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-        });
+        const targetUrl = buildClientApiUrl(kind, query);
+        const cacheKey = targetUrl.pathname + targetUrl.search;
+        const cached = getMemoryCache(cacheKey);
 
-        if (!response.ok) {
-            sendJson(res, response.status, { error: `Upstream error: ${response.status}` });
+        if (cached) {
+            res.setHeader('X-QC-Cache', cached.state === 'fresh' ? 'HIT' : 'STALE');
+            if (cached.state === 'stale') refreshMemoryCache(cacheKey, targetUrl, kind);
+            sendJson(res, 200, cached.data);
             return;
         }
 
-        const data = await response.json();
-        sendJson(res, 200, sanitizeUpstreamData(data));
+        const data = sanitizeUpstreamData(await fetchUpstreamJson(targetUrl));
+        setMemoryCache(cacheKey, data, kind);
+        res.setHeader('X-QC-Cache', 'MISS');
+        sendJson(res, 200, data);
     } catch (error) {
         console.error('Client API error:', error.message);
         sendJson(res, error.statusCode || 500, { error: 'Internal API error' });

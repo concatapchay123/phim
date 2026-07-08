@@ -32,7 +32,8 @@ module.exports = async (req, res) => {
     }
 
     const lock = setSecurityLockCookie(req, res, {
-        reason: req.query?.reason || req.headers['x-qc-security-signal'] || 'client-signal'
+        reason: req.query?.reason || req.headers['x-qc-security-signal'] || 'client-signal',
+        seconds: req.query?.s
     });
 
     res.setHeader('X-QC-Security-Lock-Until', String(lock.expiresAt));
