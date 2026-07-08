@@ -1,0 +1,21 @@
+# Source files - do not deploy to production
+app.js
+style.css
+index.html
+danh-sach.html
+phim.html
+xem-phim.html
+tu-phim.html
+security-locked.html
+server.js
+API_document.md
+detail.json
+DESIGN.md
+PRODUCT.md
+package.json
+package-lock.json
+node_modules
+*.map
+.gitignore
+build.bat
+fix-refs.js

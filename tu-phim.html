@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tủ Phim Của Bạn - Quán Chill</title>
+    <meta name="description" content="Xem danh sách phim yêu thích và lịch sử xem phim của bạn tại Quán Chill.">
+    <meta name="theme-color" content="#0a0c14">
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="style.css?v=1.0.4">
+
+    <!-- Icons (Lucide) -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+
+<body>
+    <!-- Header/Navbar -->
+    <header class="navbar">
+        <div class="container nav-container">
+            <a href="index.html" class="logo" id="logoLink">
+                <img src="assets/logo.png" alt="Quán Chill" class="logo-img">
+                <div class="logo-text">
+                    <span class="logo-quan">Quán</span><span class="logo-chill">Chill</span>
+                </div>
+            </a>
+
+            <!-- Navigation Links -->
+            <nav class="nav-links" id="navLinks">
+                <a href="index.html" class="nav-link" id="navTrangChu">Trang Chủ</a>
+                <div class="nav-dropdown-wrapper">
+                    <a href="#" class="nav-link" id="navTheLoai">Thể loại <i data-lucide="chevron-down" class="nav-arrow"></i></a>
+                    <div class="dropdown-menu" id="dropdownTheLoai">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+                <a href="danh-sach.html?type=phim-moi-cap-nhat" class="nav-link" id="navPhimMoi">Phim Mới</a>
+                <div class="nav-dropdown-wrapper">
+                    <a href="#" class="nav-link" id="navQuocGia">Quốc gia <i data-lucide="chevron-down" class="nav-arrow"></i></a>
+                    <div class="dropdown-menu" id="dropdownQuocGia">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+                <a href="danh-sach.html?type=phim-le" class="nav-link" id="navPhimLe">Phim Lẻ</a>
+                <a href="danh-sach.html?type=phim-bo" class="nav-link" id="navPhimBo">Phim Bộ</a>
+                <a href="danh-sach.html?type=phim-chieu-rap" class="nav-link" id="navPhimChieuRap">Phim Chiếu Rạp</a>
+                <a href="tu-phim.html" class="nav-link active" id="navTuPhim">Tủ Phim</a>
+            </nav>
+
+            <!-- Search and Controls -->
+            <div class="nav-controls">
+                <div class="search-bar">
+                    <i data-lucide="search" class="search-icon"></i>
+                    <input type="text" id="searchInput" placeholder="Tìm phim, diễn viên..." autocomplete="off">
+                    <button id="searchBtn" class="search-btn" aria-label="Tìm phim">
+                        <i data-lucide="arrow-right"></i>
+                    </button>
+                </div>
+
+                <!-- Theme Toggle Button -->
+                <button id="themeToggle" class="theme-toggle-btn" title="Chuyển chế độ Sáng/Tối" aria-label="Chuyển chế độ sáng tối">
+                    <i data-lucide="sun" class="sun-icon"></i>
+                    <i data-lucide="moon" class="moon-icon"></i>
+                </button>
+                
+                <!-- Member Account Trigger Removed (Auth UI removed) -->
+                
+                <!-- Mobile Menu Toggle -->
+                <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Mở menu">
+                    <i data-lucide="menu" id="menuIconOpen"></i>
+                    <i data-lucide="x" id="menuIconClose" class="hidden"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="main-content container inner-main" style="min-height: 70vh;">
+        <!-- TỦ PHIM (LIBRARY: WATCHLIST & HISTORY) -->
+        <div id="libraryPage" class="page-view">
+            <h2 class="page-title"><i data-lucide="library" class="title-icon"></i> Tủ Phim Của Bạn</h2>
+            
+            <!-- Library Tabs -->
+            <div class="library-tabs">
+                <button class="lib-tab-btn active" data-tab="watchlist">
+                    <i data-lucide="heart"></i> Danh Sách Yêu Thích (<span id="countWatchlist">0</span>)
+                </button>
+                <button class="lib-tab-btn" data-tab="history">
+                    <i data-lucide="history"></i> Lịch Sử Đã Xem (<span id="countHistory">0</span>)
+                </button>
+            </div>
+
+            <!-- Watchlist Panel -->
+            <div class="library-panel" id="watchlistPanel">
+                <div class="movie-grid" id="watchlistGrid">
+                    <!-- Movie cards for watchlist -->
+                </div>
+                <div class="no-results" id="watchlistEmpty">
+                    <i data-lucide="heart-off" class="no-results-icon"></i>
+                    <p>Danh sách yêu thích của bạn đang trống. Hãy thêm phim yêu thích của bạn để lưu lại tại đây!</p>
+                </div>
+            </div>
+
+            <!-- History Panel -->
+            <div class="library-panel hidden" id="historyPanel">
+                <div class="history-list" id="historyList">
+                    <!-- History rows injected here -->
+                </div>
+                <div class="no-results" id="historyEmpty">
+                    <i data-lucide="history" class="no-results-icon" style="opacity: 0.25;"></i>
+                    <p>Bạn chưa xem bộ phim nào gần đây.</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container footer-content">
+            <div class="footer-brand">
+                <a href="index.html" class="logo">
+                    <img src="assets/logo.png" alt="Quán Chill" class="logo-img">
+                    <div class="logo-text">
+                        <span class="logo-quan">Quán</span><span class="logo-chill">Chill</span>
+                    </div>
+                </a>
+                <p class="footer-text">Nền tảng xem phim trực tuyến chất lượng cao, hoàn toàn miễn phí và không quảng cáo phiền toái. Tận hưởng thế giới điện ảnh đỉnh cao ngay tại nhà.</p>
+            </div>
+            
+            <div class="footer-links">
+                <h3>Khám Phá</h3>
+                <ul>
+                    <li><a href="index.html">Trang Chủ</a></li>
+                    <li><a href="danh-sach.html?type=phim-bo">Phim Bộ</a></li>
+                    <li><a href="danh-sach.html?type=phim-le">Phim Lẻ</a></li>
+                    <li><a href="tu-phim.html">Tủ Phim</a></li>
+                </ul>
+            </div>
+
+            <div class="footer-links">
+                <h3>Về Chúng Tôi</h3>
+                <ul>
+                    <li><a href="#">Điều Khoản Dịch Vụ</a></li>
+                    <li><a href="#">Chính Sách Bảo Mật</a></li>
+                    <li><a href="#">Liên Hệ Bản Quyền</a></li>
+                </ul>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2026 Quán Chill Premium. Xem phim và chill trọn vẹn từng khoảnh khắc cùng nhau.</p>
+        </div>
+    </footer>
+
+    <!-- Mobile Bottom Navigation -->
+    <nav class="bottom-nav" aria-label="Điều hướng nhanh">
+        <button class="bottom-nav-item" data-target-nav="navTrangChu" aria-label="Trang chủ">
+            <i data-lucide="home"></i>
+            <span>Trang chủ</span>
+        </button>
+        <button class="bottom-nav-item" data-target-nav="navPhimBo" aria-label="Phim bộ">
+            <i data-lucide="tv"></i>
+            <span>Phim bộ</span>
+        </button>
+        <button class="bottom-nav-item" data-target-nav="navPhimLe" aria-label="Phim lẻ">
+            <i data-lucide="clapperboard"></i>
+            <span>Phim lẻ</span>
+        </button>
+        <button class="bottom-nav-item" data-target-nav="navTuPhim" aria-label="Tủ phim">
+            <i data-lucide="library"></i>
+            <span>Tủ phim</span>
+        </button>
+    </nav>
+
+    <!-- Member Login Modal Removed (Auth UI removed) -->
+
+    <!-- GSAP & ScrollTrigger -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollTrigger.min.js"></script>
+
+    <!-- JS -->
+    <script src="app.js"></script>
+    <script>
+        // Initialize icons
+        lucide.createIcons();
+    </script>
+</body>
+
+</html>

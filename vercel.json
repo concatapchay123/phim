@@ -1,0 +1,273 @@
+{
+    "version": 2,
+    "cleanUrls": true,
+    "headers": [
+        {
+            "source": "/app.min.js",
+            "headers": [
+                { "key": "Cache-Control", "value": "no-store, max-age=0" },
+                { "key": "X-Content-Type-Options", "value": "nosniff" }
+            ]
+        },
+        {
+            "source": "/style.min.css",
+            "headers": [
+                { "key": "Cache-Control", "value": "no-store, max-age=0" },
+                { "key": "X-Content-Type-Options", "value": "nosniff" }
+            ]
+        },
+        {
+            "source": "/",
+            "headers": [
+                { "key": "Content-Security-Policy", "value": "default-src 'self'; base-uri 'self'; script-src 'self' https://unpkg.com https://cdnjs.cloudflare.com 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; img-src 'self' https: data:; connect-src 'self'; frame-src 'self' https:; media-src 'self' blob:; form-action 'self'; frame-ancestors 'self'; object-src 'none'; upgrade-insecure-requests" },
+                { "key": "X-Content-Type-Options", "value": "nosniff" },
+                { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
+                { "key": "Referrer-Policy", "value": "same-origin" },
+                { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), magnetometer=(), gyroscope=()" },
+                { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+                { "key": "Cross-Origin-Resource-Policy", "value": "same-origin" },
+                { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains; preload" }
+            ]
+        },
+        {
+            "source": "/index.html",
+            "headers": [
+                { "key": "Content-Security-Policy", "value": "default-src 'self'; base-uri 'self'; script-src 'self' https://unpkg.com https://cdnjs.cloudflare.com 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; img-src 'self' https: data:; connect-src 'self'; frame-src 'self' https:; media-src 'self' blob:; form-action 'self'; frame-ancestors 'self'; object-src 'none'; upgrade-insecure-requests" },
+                { "key": "X-Content-Type-Options", "value": "nosniff" },
+                { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
+                { "key": "Referrer-Policy", "value": "same-origin" },
+                { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), magnetometer=(), gyroscope=()" },
+                { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+                { "key": "Cross-Origin-Resource-Policy", "value": "same-origin" },
+                { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains; preload" }
+            ]
+        },
+        {
+            "source": "/index.min.html",
+            "headers": [
+                { "key": "Content-Security-Policy", "value": "default-src 'self'; base-uri 'self'; script-src 'self' https://unpkg.com https://cdnjs.cloudflare.com 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; img-src 'self' https: data:; connect-src 'self'; frame-src 'self' https:; media-src 'self' blob:; form-action 'self'; frame-ancestors 'self'; object-src 'none'; upgrade-insecure-requests" },
+                { "key": "X-Content-Type-Options", "value": "nosniff" },
+                { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
+                { "key": "Referrer-Policy", "value": "same-origin" },
+                { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), magnetometer=(), gyroscope=()" },
+                { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+                { "key": "Cross-Origin-Resource-Policy", "value": "same-origin" },
+                { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains; preload" }
+            ]
+        },
+        {
+            "source": "/danh-sach",
+            "headers": [
+                { "key": "Content-Security-Policy", "value": "default-src 'self'; base-uri 'self'; script-src 'self' https://unpkg.com https://cdnjs.cloudflare.com 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; img-src 'self' https: data:; connect-src 'self'; frame-src 'self' https:; media-src 'self' blob:; form-action 'self'; frame-ancestors 'self'; object-src 'none'; upgrade-insecure-requests" },
+                { "key": "X-Content-Type-Options", "value": "nosniff" },
+                { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
+                { "key": "Referrer-Policy", "value": "same-origin" },
+                { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), magnetometer=(), gyroscope=()" },
+                { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+                { "key": "Cross-Origin-Resource-Policy", "value": "same-origin" },
+                { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains; preload" }
+            ]
+        },
+        {
+            "source": "/danh-sach.html",
+            "headers": [
+                { "key": "Content-Security-Policy", "value": "default-src 'self'; base-uri 'self'; script-src 'self' https://unpkg.com https://cdnjs.cloudflare.com 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; img-src 'self' https: data:; connect-src 'self'; frame-src 'self' https:; media-src 'self' blob:; form-action 'self'; frame-ancestors 'self'; object-src 'none'; upgrade-insecure-requests" },
+                { "key": "X-Content-Type-Options", "value": "nosniff" },
+                { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
+                { "key": "Referrer-Policy", "value": "same-origin" },
+                { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), magnetometer=(), gyroscope=()" },
+                { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+                { "key": "Cross-Origin-Resource-Policy", "value": "same-origin" },
+                { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains; preload" }
+            ]
+        },
+        {
+            "source": "/danh-sach.min.html",
+            "headers": [
+                { "key": "Content-Security-Policy", "value": "default-src 'self'; base-uri 'self'; script-src 'self' https://unpkg.com https://cdnjs.cloudflare.com 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; img-src 'self' https: data:; connect-src 'self'; frame-src 'self' https:; media-src 'self' blob:; form-action 'self'; frame-ancestors 'self'; object-src 'none'; upgrade-insecure-requests" },
+                { "key": "X-Content-Type-Options", "value": "nosniff" },
+                { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
+                { "key": "Referrer-Policy", "value": "same-origin" },
+                { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), magnetometer=(), gyroscope=()" },
+                { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+                { "key": "Cross-Origin-Resource-Policy", "value": "same-origin" },
+                { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains; preload" }
+            ]
+        },
+        {
+            "source": "/phim",
+            "headers": [
+                { "key": "Content-Security-Policy", "value": "default-src 'self'; base-uri 'self'; script-src 'self' https://unpkg.com https://cdnjs.cloudflare.com 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; img-src 'self' https: data:; connect-src 'self'; frame-src 'self' https:; media-src 'self' blob:; form-action 'self'; frame-ancestors 'self'; object-src 'none'; upgrade-insecure-requests" },
+                { "key": "X-Content-Type-Options", "value": "nosniff" },
+                { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
+                { "key": "Referrer-Policy", "value": "same-origin" },
+                { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), magnetometer=(), gyroscope=()" },
+                { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+                { "key": "Cross-Origin-Resource-Policy", "value": "same-origin" },
+                { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains; preload" }
+            ]
+        },
+        {
+            "source": "/phim.html",
+            "headers": [
+                { "key": "Content-Security-Policy", "value": "default-src 'self'; base-uri 'self'; script-src 'self' https://unpkg.com https://cdnjs.cloudflare.com 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; img-src 'self' https: data:; connect-src 'self'; frame-src 'self' https:; media-src 'self' blob:; form-action 'self'; frame-ancestors 'self'; object-src 'none'; upgrade-insecure-requests" },
+                { "key": "X-Content-Type-Options", "value": "nosniff" },
+                { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
+                { "key": "Referrer-Policy", "value": "same-origin" },
+                { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), magnetometer=(), gyroscope=()" },
+                { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+                { "key": "Cross-Origin-Resource-Policy", "value": "same-origin" },
+                { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains; preload" }
+            ]
+        },
+        {
+            "source": "/phim.min.html",
+            "headers": [
+                { "key": "Content-Security-Policy", "value": "default-src 'self'; base-uri 'self'; script-src 'self' https://unpkg.com https://cdnjs.cloudflare.com 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; img-src 'self' https: data:; connect-src 'self'; frame-src 'self' https:; media-src 'self' blob:; form-action 'self'; frame-ancestors 'self'; object-src 'none'; upgrade-insecure-requests" },
+                { "key": "X-Content-Type-Options", "value": "nosniff" },
+                { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
+                { "key": "Referrer-Policy", "value": "same-origin" },
+                { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), magnetometer=(), gyroscope=()" },
+                { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+                { "key": "Cross-Origin-Resource-Policy", "value": "same-origin" },
+                { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains; preload" }
+            ]
+        },
+        {
+            "source": "/xem-phim",
+            "headers": [
+                { "key": "Content-Security-Policy", "value": "default-src 'self'; base-uri 'self'; script-src 'self' https://unpkg.com https://cdnjs.cloudflare.com 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; img-src 'self' https: data:; connect-src 'self'; frame-src 'self' https:; media-src 'self' blob:; form-action 'self'; frame-ancestors 'self'; object-src 'none'; upgrade-insecure-requests" },
+                { "key": "X-Content-Type-Options", "value": "nosniff" },
+                { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
+                { "key": "Referrer-Policy", "value": "same-origin" },
+                { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), magnetometer=(), gyroscope=()" },
+                { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+                { "key": "Cross-Origin-Resource-Policy", "value": "same-origin" },
+                { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains; preload" }
+            ]
+        },
+        {
+            "source": "/xem-phim.html",
+            "headers": [
+                { "key": "Content-Security-Policy", "value": "default-src 'self'; base-uri 'self'; script-src 'self' https://unpkg.com https://cdnjs.cloudflare.com 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; img-src 'self' https: data:; connect-src 'self'; frame-src 'self' https:; media-src 'self' blob:; form-action 'self'; frame-ancestors 'self'; object-src 'none'; upgrade-insecure-requests" },
+                { "key": "X-Content-Type-Options", "value": "nosniff" },
+                { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
+                { "key": "Referrer-Policy", "value": "same-origin" },
+                { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), magnetometer=(), gyroscope=()" },
+                { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+                { "key": "Cross-Origin-Resource-Policy", "value": "same-origin" },
+                { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains; preload" }
+            ]
+        },
+        {
+            "source": "/xem-phim.min.html",
+            "headers": [
+                { "key": "Content-Security-Policy", "value": "default-src 'self'; base-uri 'self'; script-src 'self' https://unpkg.com https://cdnjs.cloudflare.com 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; img-src 'self' https: data:; connect-src 'self'; frame-src 'self' https:; media-src 'self' blob:; form-action 'self'; frame-ancestors 'self'; object-src 'none'; upgrade-insecure-requests" },
+                { "key": "X-Content-Type-Options", "value": "nosniff" },
+                { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
+                { "key": "Referrer-Policy", "value": "same-origin" },
+                { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), magnetometer=(), gyroscope=()" },
+                { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+                { "key": "Cross-Origin-Resource-Policy", "value": "same-origin" },
+                { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains; preload" }
+            ]
+        },
+        {
+            "source": "/tu-phim",
+            "headers": [
+                { "key": "Content-Security-Policy", "value": "default-src 'self'; base-uri 'self'; script-src 'self' https://unpkg.com https://cdnjs.cloudflare.com 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; img-src 'self' https: data:; connect-src 'self'; frame-src 'self' https:; media-src 'self' blob:; form-action 'self'; frame-ancestors 'self'; object-src 'none'; upgrade-insecure-requests" },
+                { "key": "X-Content-Type-Options", "value": "nosniff" },
+                { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
+                { "key": "Referrer-Policy", "value": "same-origin" },
+                { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), magnetometer=(), gyroscope=()" },
+                { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+                { "key": "Cross-Origin-Resource-Policy", "value": "same-origin" },
+                { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains; preload" }
+            ]
+        },
+        {
+            "source": "/tu-phim.html",
+            "headers": [
+                { "key": "Content-Security-Policy", "value": "default-src 'self'; base-uri 'self'; script-src 'self' https://unpkg.com https://cdnjs.cloudflare.com 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; img-src 'self' https: data:; connect-src 'self'; frame-src 'self' https:; media-src 'self' blob:; form-action 'self'; frame-ancestors 'self'; object-src 'none'; upgrade-insecure-requests" },
+                { "key": "X-Content-Type-Options", "value": "nosniff" },
+                { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
+                { "key": "Referrer-Policy", "value": "same-origin" },
+                { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), magnetometer=(), gyroscope=()" },
+                { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+                { "key": "Cross-Origin-Resource-Policy", "value": "same-origin" },
+                { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains; preload" }
+            ]
+        },
+        {
+            "source": "/tu-phim.min.html",
+            "headers": [
+                { "key": "Content-Security-Policy", "value": "default-src 'self'; base-uri 'self'; script-src 'self' https://unpkg.com https://cdnjs.cloudflare.com 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; img-src 'self' https: data:; connect-src 'self'; frame-src 'self' https:; media-src 'self' blob:; form-action 'self'; frame-ancestors 'self'; object-src 'none'; upgrade-insecure-requests" },
+                { "key": "X-Content-Type-Options", "value": "nosniff" },
+                { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
+                { "key": "Referrer-Policy", "value": "same-origin" },
+                { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), magnetometer=(), gyroscope=()" },
+                { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+                { "key": "Cross-Origin-Resource-Policy", "value": "same-origin" },
+                { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains; preload" }
+            ]
+        },
+        {
+            "source": "/security-locked",
+            "headers": [
+                { "key": "Content-Security-Policy", "value": "default-src 'none'; base-uri 'none'; style-src 'unsafe-inline'; form-action 'none'; frame-ancestors 'none'; object-src 'none'" },
+                { "key": "Cache-Control", "value": "no-store, max-age=0" },
+                { "key": "X-Content-Type-Options", "value": "nosniff" },
+                { "key": "X-Frame-Options", "value": "DENY" },
+                { "key": "Referrer-Policy", "value": "no-referrer" },
+                { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), magnetometer=(), gyroscope=()" },
+                { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+                { "key": "Cross-Origin-Resource-Policy", "value": "same-origin" },
+                { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains; preload" }
+            ]
+        },
+        {
+            "source": "/security-locked.min.html",
+            "headers": [
+                { "key": "Content-Security-Policy", "value": "default-src 'none'; base-uri 'none'; style-src 'unsafe-inline'; form-action 'none'; frame-ancestors 'none'; object-src 'none'" },
+                { "key": "Cache-Control", "value": "no-store, max-age=0" },
+                { "key": "X-Content-Type-Options", "value": "nosniff" },
+                { "key": "X-Frame-Options", "value": "DENY" },
+                { "key": "Referrer-Policy", "value": "no-referrer" },
+                { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), magnetometer=(), gyroscope=()" },
+                { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+                { "key": "Cross-Origin-Resource-Policy", "value": "same-origin" },
+                { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains; preload" }
+            ]
+        }
+    ],
+    "rewrites": [
+        {
+            "source": "/",
+            "destination": "/index.min.html"
+        },
+        {
+            "source": "/index.html",
+            "destination": "/index.min.html"
+        },
+        {
+            "source": "/danh-sach",
+            "destination": "/danh-sach.min.html"
+        },
+        {
+            "source": "/phim",
+            "destination": "/phim.min.html"
+        },
+        {
+            "source": "/xem-phim",
+            "destination": "/xem-phim.min.html"
+        },
+        {
+            "source": "/tu-phim",
+            "destination": "/tu-phim.min.html"
+        },
+        {
+            "source": "/security-locked",
+            "destination": "/security-locked.min.html"
+        }
+    ]
+}

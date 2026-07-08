@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="referrer" content="no-referrer">
+    <meta http-equiv="Cache-Control" content="no-store">
+    <title>Trang đã bị khóa - Quán Chill</title>
+    <style>
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+            background: #05070d;
+            color: #f8fafc;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        main {
+            min-height: 100%;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+            box-sizing: border-box;
+            text-align: center;
+        }
+
+        section {
+            max-width: 560px;
+        }
+
+        .mark {
+            display: inline-grid;
+            place-items: center;
+            height: 34px;
+            padding: 0 12px;
+            margin-bottom: 18px;
+            border: 1px solid rgba(248, 113, 113, 0.55);
+            background: rgba(127, 29, 29, 0.35);
+            color: #fecaca;
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: 0.14em;
+        }
+
+        h1 {
+            margin: 0 0 14px;
+            font-size: clamp(28px, 6vw, 48px);
+            line-height: 1.05;
+        }
+
+        p {
+            margin: 0;
+            color: #cbd5e1;
+            font-size: 16px;
+            line-height: 1.65;
+        }
+
+        a {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 42px;
+            margin-top: 24px;
+            padding: 0 18px;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            color: #f8fafc;
+            text-decoration: none;
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body>
+    <main role="alert" aria-live="assertive">
+        <section>
+            <div class="mark">LOCKED</div>
+            <h1>Trang đã bị khóa</h1>
+            <p>Hệ thống đã phát hiện công cụ kiểm tra hoặc hành vi khai thác. Đóng các công cụ này, chờ hết thời gian khóa bảo mật, rồi thử lại.</p>
+            <a href="/">Thử lại</a>
+        </section>
+    </main>
+</body>
+</html>
