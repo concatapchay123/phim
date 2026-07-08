@@ -181,8 +181,8 @@ const PLAYER_CSP = [
     "default-src 'none'",
     "base-uri 'none'",
     "frame-src https:",
-    "media-src 'self' blob:",
-    "connect-src 'self'",
+    "media-src 'self' https: blob:",
+    "connect-src 'self' https:",
     "script-src 'self' 'unsafe-inline'",
     "style-src 'unsafe-inline'",
     "img-src data: https:",
@@ -459,7 +459,10 @@ async function handlePlayer(req, res, query) {
         sendHtml(res, 200, renderPlayerHtml(source, query.slug, query.ep, query.sv));
     } catch (error) {
         console.error('Player resolve error:', error.message);
-        sendText(res, error.statusCode || 500, 'Player source is unavailable');
+        sendHtml(res, error.statusCode || 500, renderPlayerHtml({
+            type: 'none',
+            message: 'Phim hiện đang được cập nhật'
+        }, query.slug, query.ep, query.sv));
     }
 }
 
@@ -504,11 +507,15 @@ async function handleStream(req, res, query) {
 
     try {
         const targetUrl = verifySignedToken(query.t);
+        const upstreamHeaders = {
+            Accept: '*/*',
+            Referer: 'https://ophim1.com/',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        };
+        if (req.headers.range) upstreamHeaders.Range = req.headers.range;
+
         const upstream = await fetch(targetUrl, {
-            headers: {
-                Accept: '*/*',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
+            headers: upstreamHeaders
         });
 
         if (!upstream.ok) {
@@ -533,14 +540,26 @@ async function handleStream(req, res, query) {
             return;
         }
 
-        const arrayBuffer = await upstream.arrayBuffer();
         res.setHeader('Cache-Control', 'private, max-age=30');
+        const contentLength = upstream.headers.get('content-length');
+        const contentRange = upstream.headers.get('content-range');
+        if (contentLength) res.setHeader('Content-Length', contentLength);
+        if (contentRange) res.setHeader('Content-Range', contentRange);
         if (req.method === 'HEAD') {
-            res.writeHead(200, { 'Content-Type': contentType });
+            res.writeHead(upstream.status, { 'Content-Type': contentType });
             res.end();
             return;
         }
-        res.writeHead(200, { 'Content-Type': contentType });
+        res.writeHead(upstream.status, { 'Content-Type': contentType });
+        if (upstream.body) {
+            for await (const chunk of upstream.body) {
+                res.write(Buffer.from(chunk));
+            }
+            res.end();
+            return;
+        }
+
+        const arrayBuffer = await upstream.arrayBuffer();
         res.end(Buffer.from(arrayBuffer));
     } catch (error) {
         console.error('Stream proxy error:', error.message);

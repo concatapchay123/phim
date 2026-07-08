@@ -20,6 +20,7 @@ const OP_COUNTRIES = 'k';
 const ROUTE_CLIENT = String.fromCharCode(47, 97, 112, 105, 47, 99);
 const ROUTE_IMAGE = String.fromCharCode(47, 97, 112, 105, 47, 105);
 const ROUTE_PLAYER = String.fromCharCode(47, 97, 112, 105, 47, 112, 108, 97, 121, 101, 114);
+const PLAYER_UPDATE_MESSAGE = 'Phim hiện đang được cập nhật';
 
 const GENRE_MAP = {
     'hanh-dong': 'Hành Động',
@@ -418,6 +419,117 @@ function createPlayerUrl(slug, episodeIndex = 0, serverIndex = 0) {
     playerUrl.searchParams.set('ep', String(Math.max(0, Number.parseInt(episodeIndex, 10) || 0)));
     playerUrl.searchParams.set('sv', String(Math.max(0, Number.parseInt(serverIndex, 10) || 0)));
     return `${playerUrl.pathname}${playerUrl.search}`;
+}
+
+function getEpisodeText(value = '') {
+    return String(value || '').trim();
+}
+
+function isPlaceholderEpisode(episode) {
+    if (!episode) return true;
+    return !getEpisodeText(episode.name) &&
+        !getEpisodeText(episode.slug) &&
+        !getEpisodeText(episode.filename);
+}
+
+function getMoviePlaybackState(movie, episodeIndex = 0, serverIndex = 0) {
+    const episodes = Array.isArray(movie?.episodes) ? movie.episodes : [];
+    const currentServer = episodes.length > serverIndex ? episodes[serverIndex] : null;
+    const serverData = Array.isArray(currentServer?.server_data) ? currentServer.server_data : [];
+    const currentEpisode = serverData.length > episodeIndex ? serverData[episodeIndex] : null;
+    const hasEpisodeMetadata = episodes.some(server => {
+        const data = Array.isArray(server?.server_data) ? server.server_data : [];
+        return data.some(episode => !isPlaceholderEpisode(episode));
+    });
+
+    return {
+        episodes,
+        currentServer,
+        serverData,
+        currentEpisode,
+        isUnavailable: !hasEpisodeMetadata || isPlaceholderEpisode(currentEpisode)
+    };
+}
+
+function renderPlayerUnavailableBlock(options = {}) {
+    const actionHtml = options.actionHtml || '';
+    return `
+        <div class="no-results player-unavailable" style="height:100%; border:none; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+            <i data-lucide="clock" style="width:48px; height:48px; color:var(--text-muted);"></i>
+            <p style="margin-top:10px;">${PLAYER_UPDATE_MESSAGE}</p>
+            ${actionHtml}
+        </div>
+    `;
+}
+
+function createPlayerFrameHTML(playerUrl) {
+    return `
+        <div class="player-frame-shell" data-player-shell>
+            <iframe data-player-frame src="${escapeHTML(playerUrl)}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="same-origin" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"></iframe>
+            <div class="player-loading-overlay" data-player-loading role="status" aria-live="polite">
+                <div class="loader"></div>
+                <p>Đang tải phim...</p>
+            </div>
+        </div>
+    `;
+}
+
+function bindPlayerFrameLoader(root) {
+    const shell = root?.querySelector?.('[data-player-shell]');
+    const frame = shell?.querySelector?.('[data-player-frame]');
+    const overlay = shell?.querySelector?.('[data-player-loading]');
+    if (!shell || !frame || !overlay) return;
+
+    let settled = false;
+    const overlayText = overlay.querySelector('p');
+
+    const cleanup = () => {
+        window.removeEventListener('message', handlePlayerMessage);
+        clearTimeout(slowTimer);
+        clearTimeout(fallbackTimer);
+        clearTimeout(cleanupTimer);
+    };
+
+    const showReady = () => {
+        if (settled) return;
+        settled = true;
+        shell.classList.add('is-ready');
+        cleanup();
+    };
+
+    const showError = message => {
+        if (settled) return;
+        settled = true;
+        overlay.classList.add('is-error');
+        overlay.innerHTML = `
+            <i data-lucide="clock" style="width:46px; height:46px;"></i>
+            <p>${escapeHTML(message || PLAYER_UPDATE_MESSAGE)}</p>
+        `;
+        shell.classList.add('has-player-error');
+        cleanup();
+        lucide.createIcons();
+    };
+
+    function handlePlayerMessage(event) {
+        if (event.origin !== window.location.origin || event.source !== frame.contentWindow) return;
+        const type = event.data?.type;
+        if (type === 'qc-player-ready') {
+            showReady();
+        } else if (type === 'qc-player-error') {
+            showError(event.data?.message || PLAYER_UPDATE_MESSAGE);
+        } else if (type === 'qc-player-loading' && overlayText) {
+            overlayText.textContent = 'Đang tải phim...';
+        }
+    }
+
+    const slowTimer = setTimeout(() => {
+        if (!settled && overlayText) overlayText.textContent = 'Phim đang tải, vui lòng chờ...';
+    }, 9000);
+    const fallbackTimer = setTimeout(showReady, 30000);
+    const cleanupTimer = setTimeout(cleanup, 60000);
+
+    frame.addEventListener('error', () => showError(PLAYER_UPDATE_MESSAGE), { once: true });
+    window.addEventListener('message', handlePlayerMessage);
 }
 
 function warmMovieIntent(movie, options = {}) {
@@ -2314,18 +2426,16 @@ async function playMovie(movie, episodeIndex = 0, serverIndex = 0) {
     document.body.style.overflow = 'hidden';
     elements.playerBody.innerHTML = '<div class="loader" style="margin: 4rem auto;"></div>';
 
-    let episodes = movie.episodes || [];
-    let currentServer = episodes.length > serverIndex ? episodes[serverIndex] : null;
-    let serverData = currentServer ? currentServer.server_data : [];
-    let currentEpisode = serverData.length > episodeIndex ? serverData[episodeIndex] : null;
+    const playback = getMoviePlaybackState(movie, episodeIndex, serverIndex);
+    let { episodes, serverData, currentEpisode } = playback;
 
-    const playerUrl = currentEpisode ? createPlayerUrl(movie.slug, episodeIndex, serverIndex) : null;
+    const playerUrl = !playback.isUnavailable ? createPlayerUrl(movie.slug, episodeIndex, serverIndex) : null;
 
     const movieName = movie.name;
-    const epName = (currentEpisode && currentEpisode.name) ? currentEpisode.name : `Tập ${episodeIndex + 1}`;
+    const epName = playerUrl && currentEpisode?.name ? currentEpisode.name : (playerUrl ? `Tập ${episodeIndex + 1}` : PLAYER_UPDATE_MESSAGE);
     
     // Save to Watch History
-    libraryManager.addToHistory(movie, epName, episodeIndex, serverIndex);
+    if (playerUrl) libraryManager.addToHistory(movie, epName, episodeIndex, serverIndex);
 
     let html = `
         <div class="player-movie-info">
@@ -2336,15 +2446,9 @@ async function playMovie(movie, episodeIndex = 0, serverIndex = 0) {
 
 
         <div class="video-container">
-            ${playerUrl ? `
-                <iframe src="${playerUrl}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="same-origin" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"></iframe>
-            ` : `
-                <div class="no-results" style="height:100%; border:none; display:flex; flex-direction:column; align-items:center; justify-content:center;">
-                    <i data-lucide="alert-circle" style="width:48px; height:48px; color:var(--text-muted);"></i>
-                    <p style="margin-top:10px;">Link xem tập này hiện đang bị lỗi hoặc chưa cập nhật.</p>
-                    <button class="btn btn-sm btn-primary" style="margin-top:15px;" onclick="closePlayerModal()">Đóng</button>
-                </div>
-            `}
+            ${playerUrl ? createPlayerFrameHTML(playerUrl) : renderPlayerUnavailableBlock({
+                actionHtml: '<button class="btn btn-sm btn-primary" style="margin-top:15px;" onclick="closePlayerModal()">Đóng</button>'
+            })}
         </div>
     `;
 
@@ -2374,6 +2478,7 @@ async function playMovie(movie, episodeIndex = 0, serverIndex = 0) {
     }
 
     elements.playerBody.innerHTML = html;
+    bindPlayerFrameLoader(elements.playerBody);
     
     // GSAP Player Entrance
     if (window.gsap && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -3175,18 +3280,16 @@ async function renderMoviePlayerPage(movie, episodeIndex = 0, serverIndex = 0, t
     const playerBody = document.getElementById('playerBody');
     if (!playerBody) return;
 
-    let episodes = movie.episodes || [];
-    let currentServer = episodes.length > serverIndex ? episodes[serverIndex] : null;
-    let serverData = currentServer ? currentServer.server_data : [];
-    let currentEpisode = serverData.length > episodeIndex ? serverData[episodeIndex] : null;
+    const playback = getMoviePlaybackState(movie, episodeIndex, serverIndex);
+    let { episodes, serverData, currentEpisode } = playback;
 
-    const playerUrl = currentEpisode ? createPlayerUrl(movie.slug, episodeIndex, serverIndex) : null;
+    const playerUrl = !playback.isUnavailable ? createPlayerUrl(movie.slug, episodeIndex, serverIndex) : null;
 
     const movieName = movie.name;
-    const epName = (currentEpisode && currentEpisode.name) ? currentEpisode.name : `Tập ${episodeIndex + 1}`;
+    const epName = playerUrl && currentEpisode?.name ? currentEpisode.name : (playerUrl ? `Tập ${episodeIndex + 1}` : PLAYER_UPDATE_MESSAGE);
     
     // Save to Watch History
-    libraryManager.addToHistory(movie, epName, episodeIndex, serverIndex);
+    if (playerUrl) libraryManager.addToHistory(movie, epName, episodeIndex, serverIndex);
 
     const posterUrl = getImageUrl(movie.poster_url);
     const backdropImg = tmdbBackdrop || (movie.thumb_url ? getImageUrl(movie.thumb_url) : posterUrl);
@@ -3210,14 +3313,7 @@ async function renderMoviePlayerPage(movie, episodeIndex = 0, serverIndex = 0, t
             </div>
 
             <div class="video-container">
-                ${playerUrl ? `
-                    <iframe src="${playerUrl}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="same-origin" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"></iframe>
-                ` : `
-                    <div class="no-results" style="height:100%; border:none; display:flex; flex-direction:column; align-items:center; justify-content:center;">
-                        <i data-lucide="alert-circle" style="width:48px; height:48px; color:var(--text-muted);"></i>
-                        <p style="margin-top:10px;">Link xem tập này hiện đang bị lỗi hoặc chưa cập nhật.</p>
-                    </div>
-                `}
+                ${playerUrl ? createPlayerFrameHTML(playerUrl) : renderPlayerUnavailableBlock()}
             </div>
     `;
 
@@ -3249,6 +3345,7 @@ async function renderMoviePlayerPage(movie, episodeIndex = 0, serverIndex = 0, t
     html += `</div>`;
 
     playerBody.innerHTML = html;
+    bindPlayerFrameLoader(playerBody);
     lucide.createIcons();
 }
 

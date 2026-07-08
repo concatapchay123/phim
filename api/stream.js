@@ -43,11 +43,15 @@ module.exports = async (req, res) => {
 
     try {
         const targetUrl = verifySignedToken(req.query.t);
+        const upstreamHeaders = {
+            Accept: '*/*',
+            Referer: 'https://ophim1.com/',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        };
+        if (req.headers.range) upstreamHeaders.Range = req.headers.range;
+
         const upstream = await fetch(targetUrl, {
-            headers: {
-                Accept: '*/*',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
+            headers: upstreamHeaders
         });
 
         if (!upstream.ok) {
@@ -67,12 +71,25 @@ module.exports = async (req, res) => {
             return res.status(200).send(rewriteM3u8Playlist(playlist, targetUrl));
         }
 
-        const arrayBuffer = await upstream.arrayBuffer();
         res.setHeader('Content-Type', contentType);
         res.setHeader('Cache-Control', 'private, max-age=30');
+        const contentLength = upstream.headers.get('content-length');
+        const contentRange = upstream.headers.get('content-range');
+        if (contentLength) res.setHeader('Content-Length', contentLength);
+        if (contentRange) res.setHeader('Content-Range', contentRange);
 
-        if (req.method === 'HEAD') return res.status(200).end();
-        return res.status(200).send(Buffer.from(arrayBuffer));
+        if (req.method === 'HEAD') return res.status(upstream.status).end();
+
+        if (upstream.body) {
+            res.status(upstream.status);
+            for await (const chunk of upstream.body) {
+                res.write(Buffer.from(chunk));
+            }
+            return res.end();
+        }
+
+        const arrayBuffer = await upstream.arrayBuffer();
+        return res.status(upstream.status).send(Buffer.from(arrayBuffer));
     } catch (error) {
         console.error('Stream proxy error:', error.message);
         return res.status(error.statusCode || 500).send('Stream proxy error');

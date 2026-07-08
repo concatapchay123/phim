@@ -2556,6 +2556,68 @@ html[data-theme="light"] .watchlist-toggle-btn.in-watchlist {
     border-radius: var(--border-radius-lg);
     border-color: rgba(255, 255, 255, 0.12);
     box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65);
+    position: relative;
+}
+
+.player-frame-shell {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    background: #000000;
+}
+
+.player-frame-shell iframe {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+}
+
+.player-loading-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.9rem;
+    padding: 1.5rem;
+    color: #f8fafc;
+    text-align: center;
+    background: radial-gradient(circle at center, rgba(15, 23, 42, 0.72), rgba(0, 0, 0, 0.96));
+    transition: opacity 0.24s ease, visibility 0.24s ease;
+    pointer-events: none;
+}
+
+.player-loading-overlay p {
+    margin: 0;
+    color: #cbd5e1;
+    font-weight: 700;
+}
+
+.player-frame-shell.is-ready .player-loading-overlay {
+    opacity: 0;
+    visibility: hidden;
+}
+
+.player-loading-overlay.is-error {
+    pointer-events: auto;
+}
+
+.player-loading-overlay.is-error i {
+    color: var(--text-muted);
+}
+
+.player-frame-shell.has-player-error iframe {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.player-unavailable {
+    min-height: 100%;
+    background: rgba(15, 23, 42, 0.52);
 }
 
 .server-section {

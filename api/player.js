@@ -18,8 +18,8 @@ module.exports = async (req, res) => {
             "default-src 'none'",
             "base-uri 'none'",
             "frame-src https:",
-            "media-src 'self' blob:",
-            "connect-src 'self'",
+            "media-src 'self' https: blob:",
+            "connect-src 'self' https:",
             "script-src 'self' 'unsafe-inline'",
             "style-src 'unsafe-inline'",
             "img-src data: https:",
@@ -66,6 +66,10 @@ module.exports = async (req, res) => {
         return res.status(200).send(renderPlayerHtml(source));
     } catch (error) {
         console.error('Player resolve error:', error.message);
-        return res.status(error.statusCode || 500).send('Player source is unavailable');
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        return res.status(error.statusCode || 500).send(renderPlayerHtml({
+            type: 'none',
+            message: 'Phim hiện đang được cập nhật'
+        }, req.query.slug, req.query.ep, req.query.sv));
     }
 };

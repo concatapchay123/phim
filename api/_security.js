@@ -5,10 +5,12 @@ const FALLBACK_API_BASE_URL = (process.env.FALLBACK_MOVIE_API_BASE_URL || 'https
 const CDN_IMAGE_BASE_URL = (process.env.CDN_IMAGE_BASE_URL || 'https://img.ophim.live/uploads/movies/').replace(/\/?$/, '/');
 const PLAYER_TOKEN_SECRET = process.env.PLAYER_TOKEN_SECRET || process.env.JWT_SECRET || 'quanchill-local-player-secret-change-me';
 const PLAYER_TOKEN_TTL_SECONDS = Math.max(30, Number(process.env.PLAYER_TOKEN_TTL_SECONDS || 300));
+const HLS_VALIDATION_TIMEOUT_MS = Math.max(800, Number(process.env.HLS_VALIDATION_TIMEOUT_MS || 2200));
 const IMAGE_TOKEN_TTL_SECONDS = Math.max(300, Number(process.env.IMAGE_TOKEN_TTL_SECONDS || 1209600));
 const SECURITY_LOCK_SECRET = process.env.SECURITY_LOCK_SECRET || PLAYER_TOKEN_SECRET;
 const SECURITY_LOCK_COOKIE_NAME = 'qc_security_lock';
 const SECURITY_LOCK_SECONDS = Math.min(300, Math.max(5, Number(process.env.SECURITY_LOCK_SECONDS || 20)));
+const PLAYER_UNAVAILABLE_MESSAGE = 'Phim hiện đang được cập nhật';
 
 const QUERY_ALLOWLIST = new Set([
     'page',
@@ -513,6 +515,10 @@ function absolutizeUrl(urlValue, baseUrl) {
     return new URL(urlValue, baseUrl).toString();
 }
 
+function isAbsoluteHttpUrl(urlValue = '') {
+    return /^https?:\/\//i.test(String(urlValue || '').trim());
+}
+
 function rewriteM3u8Playlist(playlistText, playlistUrl) {
     const makeStreamUrl = target => `/api/stream?t=${encodeURIComponent(createSignedToken(absolutizeUrl(target, playlistUrl)))}`;
 
@@ -542,24 +548,122 @@ function escapeAttr(value = '') {
     return escapeHtml(value).replace(/`/g, '&#096;');
 }
 
-function pickEpisodeSource(episodes, episodeIndex, serverIndex) {
-    const currentServer = Array.isArray(episodes) && episodes.length > serverIndex ? episodes[serverIndex] : null;
-    const serverData = currentServer && Array.isArray(currentServer.server_data) ? currentServer.server_data : [];
-    const currentEpisode = serverData.length > episodeIndex ? serverData[episodeIndex] : serverData[0];
+function createEpisodeSourceCandidate(episode, episodeIndex, serverIndex) {
+    if (!episode) return null;
 
-    if (!currentEpisode) return null;
+    const hlsUrl = String(episode.link_m3u8 || episode.m3u8 || episode.video_url || '').trim();
+    const embedUrl = String(episode.link_embed || episode.link_iframe || episode.embed_url || '').trim();
 
-    const hlsUrl = currentEpisode.link_m3u8 || currentEpisode.m3u8 || currentEpisode.video_url;
-    const embedUrl = currentEpisode.link_embed || currentEpisode.link_iframe || currentEpisode.embed_url;
-    const selectedUrl = hlsUrl || embedUrl;
-
-    if (!selectedUrl) return null;
+    if (!isAbsoluteHttpUrl(hlsUrl) && !isAbsoluteHttpUrl(embedUrl)) return null;
 
     return {
-        url: selectedUrl,
-        type: hlsUrl ? 'hls' : 'embed',
-        episodeName: currentEpisode.name || `Episode ${episodeIndex + 1}`
+        hlsUrl: isAbsoluteHttpUrl(hlsUrl) ? hlsUrl : '',
+        embedUrl: isAbsoluteHttpUrl(embedUrl) ? embedUrl : '',
+        episodeName: episode.name || `Episode ${episodeIndex + 1}`,
+        episodeIndex,
+        serverIndex
     };
+}
+
+function pickEpisodeSource(episodes, episodeIndex, serverIndex) {
+    const servers = Array.isArray(episodes) ? episodes : [];
+    const attempts = [];
+    const seen = new Set();
+
+    const addAttempt = (serverIdx, epIdx) => {
+        const key = `${serverIdx}:${epIdx}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        attempts.push({ serverIdx, epIdx });
+    };
+
+    addAttempt(serverIndex, episodeIndex);
+    servers.forEach((_server, idx) => addAttempt(idx, episodeIndex));
+
+    const requestedServer = servers[serverIndex];
+    const requestedServerData = Array.isArray(requestedServer?.server_data) ? requestedServer.server_data : [];
+    requestedServerData.forEach((_episode, idx) => addAttempt(serverIndex, idx));
+
+    servers.forEach((server, idx) => {
+        const serverData = Array.isArray(server?.server_data) ? server.server_data : [];
+        serverData.forEach((_episode, epIdx) => addAttempt(idx, epIdx));
+    });
+
+    for (const attempt of attempts) {
+        const server = servers[attempt.serverIdx];
+        const serverData = Array.isArray(server?.server_data) ? server.server_data : [];
+        const candidate = createEpisodeSourceCandidate(serverData[attempt.epIdx], attempt.epIdx, attempt.serverIdx);
+        if (candidate) return candidate;
+    }
+
+    return null;
+}
+
+async function canProxyHlsSource(fetchImpl, urlValue) {
+    if (!isAbsoluteHttpUrl(urlValue)) return false;
+
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), HLS_VALIDATION_TIMEOUT_MS) : null;
+
+    try {
+        const response = await fetchImpl(urlValue, {
+            method: 'GET',
+            signal: controller?.signal,
+            headers: {
+                Accept: 'application/vnd.apple.mpegurl, application/x-mpegURL, */*',
+                Range: 'bytes=0-65535',
+                Referer: 'https://ophim1.com/',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+        });
+
+        return response.ok;
+    } catch (error) {
+        return false;
+    } finally {
+        if (timer) clearTimeout(timer);
+    }
+}
+
+async function finalizeEpisodeSource(fetchImpl, candidate) {
+    if (!candidate) return null;
+
+    if (candidate.hlsUrl) {
+        const canProxyHls = await canProxyHlsSource(fetchImpl, candidate.hlsUrl);
+        if (canProxyHls) {
+            return {
+                ...candidate,
+                url: candidate.hlsUrl,
+                type: 'hls'
+            };
+        }
+
+        if (candidate.embedUrl) {
+            return {
+                ...candidate,
+                url: candidate.embedUrl,
+                type: 'embed',
+                fallbackReason: 'hls-proxy-unavailable'
+            };
+        }
+
+        return {
+            ...candidate,
+            url: candidate.hlsUrl,
+            type: 'hls-direct',
+            fallbackReason: 'hls-proxy-unavailable'
+        };
+    }
+
+    if (candidate.embedUrl) {
+        return {
+            ...candidate,
+            url: candidate.embedUrl,
+            type: 'embed'
+        };
+    }
+
+    return null;
 }
 
 async function fetchJson(fetchImpl, urlValue) {
@@ -586,15 +690,25 @@ async function resolveEpisodeSource(fetchImpl, options) {
     const primaryData = await fetchJson(fetchImpl, primaryUrl.toString());
     const primaryMovie = primaryData?.data?.item || primaryData?.movie || primaryData?.item;
 
-    let source = pickEpisodeSource(primaryMovie?.episodes, episodeIndex, serverIndex);
+    let source = await finalizeEpisodeSource(
+        fetchImpl,
+        pickEpisodeSource(primaryMovie?.episodes, episodeIndex, serverIndex)
+    );
     let movieName = primaryMovie?.name || primaryMovie?.origin_name || slug;
 
     if (!source) {
-        const fallbackUrl = `${FALLBACK_API_BASE_URL}/phim/${encodeURIComponent(slug)}`;
-        const fallbackData = await fetchJson(fetchImpl, fallbackUrl);
-        const fallbackMovie = fallbackData?.movie || fallbackData?.data?.item || fallbackData?.item;
-        source = pickEpisodeSource(fallbackData?.episodes || fallbackMovie?.episodes, episodeIndex, serverIndex);
-        movieName = fallbackMovie?.name || fallbackMovie?.origin_name || movieName;
+        try {
+            const fallbackUrl = `${FALLBACK_API_BASE_URL}/phim/${encodeURIComponent(slug)}`;
+            const fallbackData = await fetchJson(fetchImpl, fallbackUrl);
+            const fallbackMovie = fallbackData?.movie || fallbackData?.data?.item || fallbackData?.item;
+            source = await finalizeEpisodeSource(
+                fetchImpl,
+                pickEpisodeSource(fallbackData?.episodes || fallbackMovie?.episodes, episodeIndex, serverIndex)
+            );
+            movieName = fallbackMovie?.name || fallbackMovie?.origin_name || movieName;
+        } catch (fallbackError) {
+            if (!primaryMovie) throw fallbackError;
+        }
     }
 
     if (!source || !/^https?:\/\//i.test(source.url)) {
@@ -609,16 +723,31 @@ async function resolveEpisodeSource(fetchImpl, options) {
     };
 }
 
-function renderPlayerHtml(source, slug, epIndex, svIndex) {
+function renderPlayerHtml(source = {}, slug, epIndex, svIndex) {
     const title = `${source.movieName || 'Quán Chill'} - ${source.episodeName || ''}`.trim();
     const safeTitle = escapeHtml(title);
-    const noSourceMessage = '<div class="message">Nguồn phát chưa sẵn sàng.</div>';
+    const unavailableMessage = source.message || PLAYER_UNAVAILABLE_MESSAGE;
+    const noSourceMessage = `<div class="message"><div><strong>${escapeHtml(unavailableMessage)}</strong><p>Vui lòng quay lại sau.</p></div></div>`;
+    const statusScript = status => `
+            <script>
+                (function () {
+                    try {
+                        window.parent.postMessage({
+                            type: 'qc-player-${status}',
+                            message: ${JSON.stringify(unavailableMessage)}
+                        }, window.location.origin);
+                    } catch (e) {}
+                }());
+            </script>
+        `;
 
     let playerMarkup = noSourceMessage;
-    let scriptMarkup = '';
+    let scriptMarkup = statusScript('error');
 
-    if (source.type === 'hls' || isHlsUrl(source.url)) {
-        const streamUrl = `/api/stream?t=${encodeURIComponent(createSignedToken(source.url))}`;
+    if (source.url && (source.type === 'hls' || source.type === 'hls-direct' || isHlsUrl(source.url))) {
+        const streamUrl = source.type === 'hls-direct'
+            ? source.url
+            : `/api/stream?t=${encodeURIComponent(createSignedToken(source.url))}`;
         playerMarkup = `
             <video id="moviePlayer" controls autoplay playsinline preload="metadata"
                 controlsList="nodownload noplaybackrate noremoteplayback"
@@ -631,10 +760,47 @@ function renderPlayerHtml(source, slug, epIndex, svIndex) {
                 (function () {
                     var video = document.getElementById('moviePlayer');
                     var source = ${JSON.stringify(streamUrl)};
+                    var embedFallback = ${JSON.stringify(source.embedUrl || '')};
                     var slug = ${JSON.stringify(slug || '')};
                     var ep = ${JSON.stringify(epIndex !== undefined ? String(epIndex) : '')};
                     var sv = ${JSON.stringify(svIndex !== undefined ? String(svIndex) : '')};
                     if (!video) return;
+
+                    function postPlayerStatus(status, message) {
+                        try {
+                            window.parent.postMessage({
+                                type: 'qc-player-' + status,
+                                message: message || ''
+                            }, window.location.origin);
+                        } catch (e) {}
+                    }
+
+                    var readyPosted = false;
+                    function postReady() {
+                        if (readyPosted) return;
+                        readyPosted = true;
+                        postPlayerStatus('ready');
+                    }
+
+                    var embedFallbackStarted = false;
+                    function loadEmbedFallback() {
+                        if (!embedFallback || embedFallbackStarted) return false;
+                        embedFallbackStarted = true;
+                        postPlayerStatus('loading');
+                        var frame = document.createElement('iframe');
+                        frame.id = 'embedPlayer';
+                        frame.src = embedFallback;
+                        frame.title = ${JSON.stringify(title)};
+                        frame.allow = 'autoplay; fullscreen; encrypted-media; picture-in-picture';
+                        frame.allowFullscreen = true;
+                        frame.referrerPolicy = 'no-referrer';
+                        frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-presentation');
+                        frame.addEventListener('load', postReady);
+                        video.replaceWith(frame);
+                        return true;
+                    }
+
+                    postPlayerStatus('loading');
 
                     var savedProgress = null;
                     if (slug && ep) {
@@ -656,10 +822,18 @@ function renderPlayerHtml(source, slug, epIndex, svIndex) {
                             lowLatencyMode: false,
                             backBufferLength: 60
                         });
+                        hls.on(window.Hls.Events.ERROR, function (_event, data) {
+                            if (data && data.fatal) {
+                                if (!loadEmbedFallback()) {
+                                    postPlayerStatus('error', ${JSON.stringify(PLAYER_UNAVAILABLE_MESSAGE)});
+                                }
+                            }
+                        });
                         hls.loadSource(source);
                         hls.attachMedia(video);
                     } else {
                         video.outerHTML = ${JSON.stringify(noSourceMessage)};
+                        postPlayerStatus('error', ${JSON.stringify(PLAYER_UNAVAILABLE_MESSAGE)});
                     }
 
                     // Seek to saved progress once metadata or data loads
@@ -674,8 +848,20 @@ function renderPlayerHtml(source, slug, epIndex, svIndex) {
                         }
                     }
                     video.addEventListener('loadedmetadata', doSeek);
-                    video.addEventListener('loadeddata', doSeek);
-                    video.addEventListener('canplay', doSeek);
+                    video.addEventListener('loadeddata', function () {
+                        doSeek();
+                        postReady();
+                    });
+                    video.addEventListener('canplay', function () {
+                        doSeek();
+                        postReady();
+                    });
+                    video.addEventListener('playing', postReady);
+                    video.addEventListener('error', function () {
+                        if (!loadEmbedFallback()) {
+                            postPlayerStatus('error', ${JSON.stringify(PLAYER_UNAVAILABLE_MESSAGE)});
+                        }
+                    });
 
                     // Periodically save progress on timeupdate
                     var lastSaveTime = 0;
@@ -699,14 +885,36 @@ function renderPlayerHtml(source, slug, epIndex, svIndex) {
                 }());
             </script>
         `;
-    } else {
+    } else if (source.url) {
         playerMarkup = `
-            <iframe src="${escapeAttr(source.url)}"
+            <iframe id="embedPlayer" src="${escapeAttr(source.url)}"
                 title="${safeTitle}"
                 allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
                 allowfullscreen
                 referrerpolicy="no-referrer"
                 sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"></iframe>
+        `;
+        scriptMarkup = `
+            <script>
+                (function () {
+                    function postPlayerStatus(status, message) {
+                        try {
+                            window.parent.postMessage({
+                                type: 'qc-player-' + status,
+                                message: message || ''
+                            }, window.location.origin);
+                        } catch (e) {}
+                    }
+
+                    var frame = document.getElementById('embedPlayer');
+                    postPlayerStatus('loading');
+                    if (frame) {
+                        frame.addEventListener('load', function () {
+                            postPlayerStatus('ready');
+                        });
+                    }
+                }());
+            </script>
         `;
     }
 
@@ -743,6 +951,17 @@ function renderPlayerHtml(source, slug, epIndex, svIndex) {
             text-align: center;
             padding: 24px;
             box-sizing: border-box;
+        }
+        .message strong {
+            display: block;
+            color: #f8fafc;
+            font-size: clamp(18px, 3vw, 26px);
+            line-height: 1.25;
+        }
+        .message p {
+            margin: 10px 0 0;
+            color: #94a3b8;
+            font-size: 14px;
         }
     </style>
 </head>
