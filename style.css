@@ -2597,6 +2597,10 @@ html[data-theme="light"] .watchlist-toggle-btn.in-watchlist {
     font-weight: 700;
 }
 
+.player-loading-overlay .loader {
+    display: none;
+}
+
 .player-frame-shell.is-ready:not(.has-player-error) .player-loading-overlay {
     opacity: 0;
     visibility: hidden;

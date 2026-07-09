@@ -469,7 +469,6 @@ function createPlayerFrameHTML(playerUrl) {
         <div class="player-frame-shell" data-player-shell>
             <iframe data-player-frame src="${escapeHTML(playerUrl)}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="same-origin" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"></iframe>
             <div class="player-loading-overlay" data-player-loading role="status" aria-live="polite">
-                <div class="loader"></div>
                 <p>Đang tải phim...</p>
             </div>
         </div>
