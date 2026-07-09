@@ -788,9 +788,17 @@ function renderPlayerHtml(source = {}, slug, epIndex, svIndex) {
                     }
 
                     var readyPosted = false;
+                    var startupFallbackTimer = null;
+                    function clearStartupFallbackTimer() {
+                        if (!startupFallbackTimer) return;
+                        clearTimeout(startupFallbackTimer);
+                        startupFallbackTimer = null;
+                    }
+
                     function postReady() {
                         if (readyPosted) return;
                         readyPosted = true;
+                        clearStartupFallbackTimer();
                         postPlayerStatus('ready');
                     }
 
@@ -798,6 +806,7 @@ function renderPlayerHtml(source = {}, slug, epIndex, svIndex) {
                     function loadEmbedFallback() {
                         if (!embedFallback || embedFallbackStarted) return false;
                         embedFallbackStarted = true;
+                        clearStartupFallbackTimer();
                         postPlayerStatus('loading');
                         var frame = document.createElement('iframe');
                         frame.id = 'embedPlayer';
@@ -813,6 +822,11 @@ function renderPlayerHtml(source = {}, slug, epIndex, svIndex) {
                     }
 
                     postPlayerStatus('loading');
+                    if (embedFallback) {
+                        startupFallbackTimer = setTimeout(function () {
+                            if (!readyPosted) loadEmbedFallback();
+                        }, 12000);
+                    }
 
                     var savedProgress = null;
                     if (slug && ep) {

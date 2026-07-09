@@ -21,6 +21,7 @@ module.exports = async (req, res) => {
             "media-src 'self' https: blob:",
             "connect-src 'self' https:",
             "script-src 'self' 'unsafe-inline'",
+            "worker-src 'self' blob:",
             "style-src 'unsafe-inline'",
             "img-src data: https:",
             "form-action 'none'",

@@ -482,7 +482,8 @@ function bindPlayerFrameLoader(root) {
     const overlay = shell?.querySelector?.('[data-player-loading]');
     if (!shell || !frame || !overlay) return;
 
-    let settled = false;
+    let overlayHidden = false;
+    let errorShown = false;
     const overlayText = overlay.querySelector('p');
 
     const cleanup = () => {
@@ -492,16 +493,23 @@ function bindPlayerFrameLoader(root) {
         clearTimeout(cleanupTimer);
     };
 
-    const showReady = () => {
-        if (settled) return;
-        settled = true;
+    const clearLoadingTimers = () => {
+        clearTimeout(slowTimer);
+        clearTimeout(fallbackTimer);
+    };
+
+    const hideLoading = () => {
+        if (overlayHidden || errorShown) return;
+        overlayHidden = true;
         shell.classList.add('is-ready');
-        cleanup();
+        clearLoadingTimers();
     };
 
     const showError = message => {
-        if (settled) return;
-        settled = true;
+        if (errorShown) return;
+        errorShown = true;
+        overlayHidden = false;
+        shell.classList.remove('is-ready');
         overlay.classList.add('is-error');
         overlay.innerHTML = `
             <i data-lucide="clock" style="width:46px; height:46px;"></i>
@@ -516,21 +524,24 @@ function bindPlayerFrameLoader(root) {
         if (event.origin !== window.location.origin || event.source !== frame.contentWindow) return;
         const type = event.data?.type;
         if (type === 'qc-player-ready') {
-            showReady();
+            hideLoading();
         } else if (type === 'qc-player-error') {
             showError(event.data?.message || PLAYER_UPDATE_MESSAGE);
-        } else if (type === 'qc-player-loading' && overlayText) {
+        } else if (type === 'qc-player-loading' && overlayText && !overlayHidden) {
             overlayText.textContent = 'Đang tải phim...';
         }
     }
 
     const slowTimer = setTimeout(() => {
-        if (!settled && overlayText) overlayText.textContent = 'Phim đang tải, vui lòng chờ...';
+        if (!overlayHidden && !errorShown && overlayText) overlayText.textContent = 'Phim đang tải, vui lòng chờ...';
     }, 9000);
-    const fallbackTimer = setTimeout(showReady, 30000);
+    const fallbackTimer = setTimeout(hideLoading, 6000);
     const cleanupTimer = setTimeout(cleanup, 60000);
 
     frame.addEventListener('error', () => showError(PLAYER_UPDATE_MESSAGE), { once: true });
+    frame.addEventListener('load', () => {
+        window.setTimeout(hideLoading, 150);
+    }, { once: true });
     window.addEventListener('message', handlePlayerMessage);
 }
 

@@ -2597,7 +2597,7 @@ html[data-theme="light"] .watchlist-toggle-btn.in-watchlist {
     font-weight: 700;
 }
 
-.player-frame-shell.is-ready .player-loading-overlay {
+.player-frame-shell.is-ready:not(.has-player-error) .player-loading-overlay {
     opacity: 0;
     visibility: hidden;
 }
