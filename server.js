@@ -11,6 +11,7 @@ const {
     getSecurityLockRetryAfter,
     isSameOriginRequest,
     isSecurityLockedRequest,
+    isStreamProxyEnabled,
     renderPlayerHtml,
     resolveImageTarget,
     resolveEpisodeSource,
@@ -42,6 +43,36 @@ function getClientCacheControl(kind) {
     const cache = CLIENT_CACHE_BY_KIND[String(kind || '')] || { ttl: 300, stale: 60 };
     const browserMaxAge = Math.min(90, Math.max(20, Math.floor(cache.ttl / 6)));
     return `public, max-age=${browserMaxAge}, s-maxage=${cache.ttl}, stale-while-revalidate=${cache.stale}`;
+}
+
+function getClientCdnCacheControl(kind) {
+    const cache = CLIENT_CACHE_BY_KIND[String(kind || '')] || { ttl: 300, stale: 60 };
+    return `public, s-maxage=${cache.ttl}, stale-while-revalidate=${cache.stale}`;
+}
+
+function applyClientCacheHeaders(res, kind) {
+    const cdnCacheControl = getClientCdnCacheControl(kind);
+    res.setHeader('Cache-Control', getClientCacheControl(kind));
+    res.setHeader('CDN-Cache-Control', cdnCacheControl);
+    res.setHeader('Vercel-CDN-Cache-Control', cdnCacheControl);
+}
+
+function applyImageCacheHeaders(res) {
+    res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+    res.setHeader('CDN-Cache-Control', 'public, s-maxage=604800, stale-while-revalidate=86400');
+    res.setHeader('Vercel-CDN-Cache-Control', 'public, s-maxage=604800, stale-while-revalidate=86400');
+}
+
+function applyProxyCacheHeaders(res) {
+    res.setHeader('Cache-Control', 'public, max-age=30, s-maxage=300, stale-while-revalidate=60');
+    res.setHeader('CDN-Cache-Control', 'public, s-maxage=300, stale-while-revalidate=60');
+    res.setHeader('Vercel-CDN-Cache-Control', 'public, s-maxage=300, stale-while-revalidate=60');
+}
+
+function applyNoStoreHeaders(res) {
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('CDN-Cache-Control', 'no-store');
+    res.setHeader('Vercel-CDN-Cache-Control', 'no-store');
 }
 
 const FALLBACK_API_BASE_URL = (process.env.FALLBACK_MOVIE_API_BASE_URL || 'https://phimapi.com').replace(/\/+$/, '');
@@ -284,16 +315,16 @@ async function handleSecurityLock(req, res, query = {}) {
 }
 
 async function handleApiProxy(req, res, apiPath, params, prefix) {
-    setSecurityHeaders(res, {
-        cacheControl: 's-maxage=300, stale-while-revalidate=60'
-    });
+    setSecurityHeaders(res);
 
     if (process.env.ENABLE_LEGACY_PROXY !== 'true') {
+        applyNoStoreHeaders(res);
         sendJson(res, 404, { error: 'Endpoint disabled' });
         return;
     }
 
     if (req.method === 'OPTIONS') {
+        applyNoStoreHeaders(res);
         res.setHeader('Allow', 'GET, OPTIONS');
         res.writeHead(204);
         res.end();
@@ -301,18 +332,20 @@ async function handleApiProxy(req, res, apiPath, params, prefix) {
     }
 
     if (req.method !== 'GET') {
+        applyNoStoreHeaders(res);
         res.setHeader('Allow', 'GET, OPTIONS');
         sendJson(res, 405, { error: 'Method not allowed' });
         return;
     }
 
     if (!isSameOriginRequest(req)) {
+        applyNoStoreHeaders(res);
         sendJson(res, 403, { error: 'Cross-origin API access is blocked' });
         return;
     }
 
     if (isSecurityLockedRequest(req)) {
-        res.setHeader('Cache-Control', 'private, no-store');
+        applyNoStoreHeaders(res);
         res.setHeader('Retry-After', String(getSecurityLockRetryAfter(req)));
         sendJson(res, 423, { error: 'Security lock is active' });
         return;
@@ -320,6 +353,7 @@ async function handleApiProxy(req, res, apiPath, params, prefix) {
 
     const rateLimit = checkRateLimit(req, { prefix, limit: 160 });
     if (!rateLimit.ok) {
+        applyNoStoreHeaders(res);
         res.setHeader('Retry-After', String(rateLimit.retryAfter));
         sendJson(res, 429, { error: 'Too many requests' });
         return;
@@ -335,26 +369,27 @@ async function handleApiProxy(req, res, apiPath, params, prefix) {
         });
 
         if (!response.ok) {
+            applyNoStoreHeaders(res);
             sendJson(res, response.status, { error: `Upstream error: ${response.status}` });
             return;
         }
 
         const data = await response.json();
+        applyProxyCacheHeaders(res);
         sendJson(res, 200, sanitizeUpstreamData(data));
     } catch (error) {
         console.error('Proxy request error:', error.message);
+        applyNoStoreHeaders(res);
         sendJson(res, error.statusCode || 500, { error: 'Internal proxy error' });
     }
 }
 
 async function handleClientApi(req, res, query) {
     const kind = query.q || query.kind;
-    setSecurityHeaders(res, {
-        cacheControl: getClientCacheControl(kind)
-    });
-    res.setHeader('Vary', 'Cookie');
+    setSecurityHeaders(res);
 
     if (req.method === 'OPTIONS') {
+        applyNoStoreHeaders(res);
         res.setHeader('Allow', 'GET, OPTIONS');
         res.writeHead(204);
         res.end();
@@ -362,18 +397,20 @@ async function handleClientApi(req, res, query) {
     }
 
     if (req.method !== 'GET') {
+        applyNoStoreHeaders(res);
         res.setHeader('Allow', 'GET, OPTIONS');
         sendJson(res, 405, { error: 'Method not allowed' });
         return;
     }
 
     if (!isSameOriginRequest(req)) {
+        applyNoStoreHeaders(res);
         sendJson(res, 403, { error: 'Cross-origin API access is blocked' });
         return;
     }
 
     if (isSecurityLockedRequest(req)) {
-        res.setHeader('Cache-Control', 'private, no-store');
+        applyNoStoreHeaders(res);
         res.setHeader('Retry-After', String(getSecurityLockRetryAfter(req)));
         sendJson(res, 423, { error: 'Security lock is active' });
         return;
@@ -381,6 +418,7 @@ async function handleClientApi(req, res, query) {
 
     const rateLimit = checkRateLimit(req, { prefix: 'client', limit: 160 });
     if (!rateLimit.ok) {
+        applyNoStoreHeaders(res);
         res.setHeader('Retry-After', String(rateLimit.retryAfter));
         sendJson(res, 429, { error: 'Too many requests' });
         return;
@@ -392,6 +430,7 @@ async function handleClientApi(req, res, query) {
         const cached = getMemoryCache(cacheKey);
 
         if (cached) {
+            applyClientCacheHeaders(res, kind);
             res.setHeader('X-QC-Cache', cached.state === 'fresh' ? 'HIT' : 'STALE');
             if (cached.state === 'stale') refreshMemoryCache(cacheKey, targetUrl, kind);
             sendJson(res, 200, cached.data);
@@ -400,10 +439,12 @@ async function handleClientApi(req, res, query) {
 
         const data = sanitizeUpstreamData(await fetchUpstreamJson(targetUrl));
         setMemoryCache(cacheKey, data, kind);
+        applyClientCacheHeaders(res, kind);
         res.setHeader('X-QC-Cache', 'MISS');
         sendJson(res, 200, data);
     } catch (error) {
         console.error('Client API error:', error.message);
+        applyNoStoreHeaders(res);
         sendJson(res, error.statusCode || 500, { error: 'Internal API error' });
     }
 }
@@ -472,6 +513,12 @@ async function handleStream(req, res, query) {
         crossOriginResourcePolicy: 'same-origin',
         referrerPolicy: 'no-referrer'
     });
+
+    if (!isStreamProxyEnabled()) {
+        res.setHeader('Cache-Control', 'public, max-age=60');
+        sendText(res, 404, 'Stream proxy is disabled');
+        return;
+    }
 
     if (req.method === 'OPTIONS') {
         res.setHeader('Allow', 'GET, HEAD, OPTIONS');
@@ -569,13 +616,13 @@ async function handleStream(req, res, query) {
 
 async function handleImage(req, res, query) {
     setSecurityHeaders(res, {
-        cacheControl: 'private, max-age=86400',
         crossOriginResourcePolicy: 'same-origin',
         referrerPolicy: 'no-referrer',
         csp: "default-src 'none'; img-src 'self' data:; frame-ancestors 'none'; object-src 'none'"
     });
 
     if (req.method === 'OPTIONS') {
+        applyNoStoreHeaders(res);
         res.setHeader('Allow', 'GET, HEAD, OPTIONS');
         res.writeHead(204);
         res.end();
@@ -583,18 +630,20 @@ async function handleImage(req, res, query) {
     }
 
     if (req.method !== 'GET' && req.method !== 'HEAD') {
+        applyNoStoreHeaders(res);
         res.setHeader('Allow', 'GET, HEAD, OPTIONS');
         sendText(res, 405, 'Method not allowed');
         return;
     }
 
     if (!isSameOriginRequest(req)) {
+        applyNoStoreHeaders(res);
         sendText(res, 403, 'Cross-origin image access is blocked');
         return;
     }
 
     if (isSecurityLockedRequest(req)) {
-        res.setHeader('Cache-Control', 'private, no-store');
+        applyNoStoreHeaders(res);
         res.setHeader('Retry-After', String(getSecurityLockRetryAfter(req)));
         sendText(res, 423, 'Security lock is active');
         return;
@@ -602,6 +651,7 @@ async function handleImage(req, res, query) {
 
     const rateLimit = checkRateLimit(req, { prefix: 'image', limit: 1200 });
     if (!rateLimit.ok) {
+        applyNoStoreHeaders(res);
         res.setHeader('Retry-After', String(rateLimit.retryAfter));
         sendText(res, 429, 'Too many requests');
         return;
@@ -617,17 +667,19 @@ async function handleImage(req, res, query) {
         });
 
         if (!upstream.ok) {
+            applyNoStoreHeaders(res);
             sendText(res, upstream.status, 'Image source is unavailable');
             return;
         }
 
         const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
         if (!contentType.startsWith('image/')) {
+            applyNoStoreHeaders(res);
             sendText(res, 415, 'Unsupported media type');
             return;
         }
 
-        res.setHeader('Cache-Control', 'private, max-age=86400');
+        applyImageCacheHeaders(res);
         if (req.method === 'HEAD') {
             res.writeHead(200, { 'Content-Type': contentType });
             res.end();
@@ -639,6 +691,7 @@ async function handleImage(req, res, query) {
         res.end(Buffer.from(arrayBuffer));
     } catch (error) {
         console.error('Image proxy error:', error.message);
+        applyNoStoreHeaders(res);
         sendText(res, error.statusCode || 500, 'Image proxy error');
     }
 }

@@ -7,6 +7,8 @@ const PLAYER_TOKEN_SECRET = process.env.PLAYER_TOKEN_SECRET || process.env.JWT_S
 const PLAYER_TOKEN_TTL_SECONDS = Math.max(30, Number(process.env.PLAYER_TOKEN_TTL_SECONDS || 300));
 const HLS_VALIDATION_TIMEOUT_MS = Math.max(800, Number(process.env.HLS_VALIDATION_TIMEOUT_MS || 2200));
 const IMAGE_TOKEN_TTL_SECONDS = Math.max(300, Number(process.env.IMAGE_TOKEN_TTL_SECONDS || 1209600));
+const ENABLE_STREAM_PROXY = process.env.ENABLE_STREAM_PROXY === 'true';
+const ENABLE_IMAGE_PROXY = process.env.ENABLE_IMAGE_PROXY === 'true';
 const SECURITY_LOCK_SECRET = process.env.SECURITY_LOCK_SECRET || PLAYER_TOKEN_SECRET;
 const SECURITY_LOCK_COOKIE_NAME = 'qc_security_lock';
 const SECURITY_LOCK_SECONDS = Math.min(300, Math.max(5, Number(process.env.SECURITY_LOCK_SECONDS || 20)));
@@ -329,6 +331,7 @@ function sanitizeStringValue(value) {
 function createImageProxyPath(src, sourceKey = '') {
     try {
         const targetUrl = normalizeImageUrl(src, sourceKey);
+        if (!ENABLE_IMAGE_PROXY) return targetUrl.toString();
         return `/api/i?t=${encodeURIComponent(createSignedToken(targetUrl, IMAGE_TOKEN_TTL_SECONDS))}`;
     } catch (error) {
         return '';
@@ -629,6 +632,15 @@ async function finalizeEpisodeSource(fetchImpl, candidate) {
     if (!candidate) return null;
 
     if (candidate.hlsUrl) {
+        if (!ENABLE_STREAM_PROXY) {
+            return {
+                ...candidate,
+                url: candidate.hlsUrl,
+                type: 'hls-direct',
+                fallbackReason: 'stream-proxy-disabled'
+            };
+        }
+
         const canProxyHls = await canProxyHlsSource(fetchImpl, candidate.hlsUrl);
         if (canProxyHls) {
             return {
@@ -972,6 +984,10 @@ function renderPlayerHtml(source = {}, slug, epIndex, svIndex) {
 </html>`;
 }
 
+function isStreamProxyEnabled() {
+    return ENABLE_STREAM_PROXY;
+}
+
 module.exports = {
     API_BASE_URL,
     buildClientApiUrl,
@@ -983,6 +999,7 @@ module.exports = {
     getRequestOrigin,
     isSameOriginRequest,
     isSecurityLockedRequest,
+    isStreamProxyEnabled,
     normalizeApiPath,
     normalizeImageUrl,
     normalizeIndex,

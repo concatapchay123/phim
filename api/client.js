@@ -35,6 +35,24 @@ function getClientCacheControl(kind) {
     return `public, max-age=${browserMaxAge}, s-maxage=${cache.ttl}, stale-while-revalidate=${cache.stale}`;
 }
 
+function getClientCdnCacheControl(kind) {
+    const cache = CLIENT_CACHE_BY_KIND[String(kind || '')] || { ttl: 300, stale: 60 };
+    return `public, s-maxage=${cache.ttl}, stale-while-revalidate=${cache.stale}`;
+}
+
+function applyClientCacheHeaders(res, kind) {
+    const cdnCacheControl = getClientCdnCacheControl(kind);
+    res.setHeader('Cache-Control', getClientCacheControl(kind));
+    res.setHeader('CDN-Cache-Control', cdnCacheControl);
+    res.setHeader('Vercel-CDN-Cache-Control', cdnCacheControl);
+}
+
+function applyNoStoreHeaders(res) {
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('CDN-Cache-Control', 'no-store');
+    res.setHeader('Vercel-CDN-Cache-Control', 'no-store');
+}
+
 function getClientCachePolicy(kind) {
     return CLIENT_CACHE_BY_KIND[String(kind || '')] || { ttl: 300, stale: 60 };
 }
@@ -121,10 +139,7 @@ function refreshMemoryCache(cacheKey, targetUrl, kind) {
 
 module.exports = async (req, res) => {
     const kind = req.query.q || req.query.kind;
-    setSecurityHeaders(res, {
-        cacheControl: getClientCacheControl(kind)
-    });
-    res.setHeader('Vary', 'Cookie');
+    setSecurityHeaders(res);
 
     const requestPath = (() => {
         try {
@@ -135,31 +150,36 @@ module.exports = async (req, res) => {
     })();
 
     if (requestPath === '/api/client' || requestPath.endsWith('/client')) {
+        applyNoStoreHeaders(res);
         return res.status(404).json({ error: 'Endpoint disabled' });
     }
 
     if (req.method === 'OPTIONS') {
+        applyNoStoreHeaders(res);
         res.setHeader('Allow', 'GET, OPTIONS');
         return res.status(204).end();
     }
 
     if (req.method !== 'GET') {
+        applyNoStoreHeaders(res);
         res.setHeader('Allow', 'GET, OPTIONS');
         return res.status(405).json({ error: 'Method not allowed' });
     }
 
     if (!isSameOriginRequest(req)) {
+        applyNoStoreHeaders(res);
         return res.status(403).json({ error: 'Cross-origin API access is blocked' });
     }
 
     if (isSecurityLockedRequest(req)) {
-        res.setHeader('Cache-Control', 'private, no-store');
+        applyNoStoreHeaders(res);
         res.setHeader('Retry-After', String(getSecurityLockRetryAfter(req)));
         return res.status(423).json({ error: 'Security lock is active' });
     }
 
     const rateLimit = checkRateLimit(req, { prefix: 'client', limit: 160 });
     if (!rateLimit.ok) {
+        applyNoStoreHeaders(res);
         res.setHeader('Retry-After', String(rateLimit.retryAfter));
         return res.status(429).json({ error: 'Too many requests' });
     }
@@ -170,6 +190,7 @@ module.exports = async (req, res) => {
         const cached = getMemoryCache(cacheKey);
 
         if (cached) {
+            applyClientCacheHeaders(res, kind);
             res.setHeader('X-QC-Cache', cached.state === 'fresh' ? 'HIT' : 'STALE');
             if (cached.state === 'stale') refreshMemoryCache(cacheKey, targetUrl, kind);
             return res.status(200).json(cached.data);
@@ -177,10 +198,12 @@ module.exports = async (req, res) => {
 
         const data = sanitizeUpstreamData(await fetchUpstreamJson(targetUrl));
         setMemoryCache(cacheKey, data, kind);
+        applyClientCacheHeaders(res, kind);
         res.setHeader('X-QC-Cache', 'MISS');
         return res.status(200).json(data);
     } catch (error) {
         console.error('Client API error:', error.message);
+        applyNoStoreHeaders(res);
         return res.status(error.statusCode || 500).json({ error: 'Internal API error' });
     }
 };

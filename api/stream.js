@@ -1,6 +1,7 @@
 const {
     checkRateLimit,
     getSecurityLockRetryAfter,
+    isStreamProxyEnabled,
     isSameOriginRequest,
     isSecurityLockedRequest,
     rewriteM3u8Playlist,
@@ -14,6 +15,11 @@ module.exports = async (req, res) => {
         crossOriginResourcePolicy: 'same-origin',
         referrerPolicy: 'no-referrer'
     });
+
+    if (!isStreamProxyEnabled()) {
+        res.setHeader('Cache-Control', 'public, max-age=60');
+        return res.status(404).send('Stream proxy is disabled');
+    }
 
     if (req.method === 'OPTIONS') {
         res.setHeader('Allow', 'GET, HEAD, OPTIONS');

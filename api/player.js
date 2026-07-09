@@ -63,7 +63,7 @@ module.exports = async (req, res) => {
         });
 
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
-        return res.status(200).send(renderPlayerHtml(source));
+        return res.status(200).send(renderPlayerHtml(source, req.query.slug, req.query.ep, req.query.sv));
     } catch (error) {
         console.error('Player resolve error:', error.message);
         res.setHeader('Content-Type', 'text/html; charset=utf-8');

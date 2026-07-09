@@ -12,6 +12,7 @@ API_document.md
 detail.json
 DESIGN.md
 PRODUCT.md
+SECURITY_HARDENING.md
 package.json
 package-lock.json
 node_modules

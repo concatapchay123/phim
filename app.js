@@ -5,7 +5,7 @@
 // =========================================================================
 // CONFIGURATION & CONSTANTS
 // =========================================================================
-const API_CACHE_PREFIX = 'qc_cache_v5_';
+const API_CACHE_PREFIX = 'qc_cache_v6_';
 const OP_HOME = 'a';
 const OP_PHIM_BO = 'b';
 const OP_PHIM_LE = 'c';
@@ -239,12 +239,14 @@ const API_CACHE_STALE_TTL = {
 const API_CACHE_MAX_ENTRIES = 90;
 
 const PREFETCH_CONFIG = {
-    gridPagesAhead: 2,
-    maxQueueSize: 22,
-    maxRequestsPerPage: 18,
-    delayMs: 720,
-    dropdownPreviewLimit: 4,
-    homeDeckPreviewLimit: 4
+    gridPagesAhead: 1,
+    maxQueueSize: 8,
+    maxRequestsPerPage: 6,
+    delayMs: 1400,
+    dropdownPreviewLimit: 2,
+    homeDeckPreviewLimit: 2,
+    autoWarmOnLoad: false,
+    prefetchHtmlOnLoad: false
 };
 
 const apiInFlightRequests = new Map();
@@ -643,9 +645,11 @@ function initClientSecurityDeterrents() {
     const lockStorageKey = 'qc_security_lock_until';
     const lockBroadcastKey = 'qc_security_lock_ping';
     const serverLockEndpoint = '/api/security-lock';
+    const serverSignalReportingEnabled = window.__QC_ENABLE_SECURITY_SIGNAL_REPORTING === true;
     const hardLockPath = '/security-locked';
     const lockDuration = 60000;
     const serverLockDuration = 120000;
+    const serverSignalReportCooldown = 30000;
     const checkInterval = 350;
     const shieldMarkup = '<div><strong style="display:block;font-size:clamp(22px,4vw,34px);font-weight:800">Trang đã tạm khóa</strong><p style="margin:12px 0 0;color:#cbd5e1;font-size:16px;line-height:1.55">Đóng công cụ kiểm tra để tiếp tục sử dụng website.</p></div>';
     const hardLockMarkup = '<main class="qc-hardlock-shell" role="alert" aria-live="assertive"><section><div class="qc-hardlock-mark">LOCKED</div><h1>Trang đã bị khóa</h1><p>Hệ thống đã phát hiện công cụ kiểm tra hoặc hành vi khai thác. Đóng các công cụ này và tải lại trang sau ít phút.</p></section></main>';
@@ -709,7 +713,8 @@ function initClientSecurityDeterrents() {
         const currentTime = now();
         inMemoryLockUntil = Math.max(inMemoryLockUntil, currentTime + serverLockDuration);
 
-        if (currentTime - lastSignalReportAt < 1800) return;
+        if (!serverSignalReportingEnabled) return;
+        if (currentTime - lastSignalReportAt < serverSignalReportCooldown) return;
         lastSignalReportAt = currentTime;
 
         const endpoint = `${serverLockEndpoint}?reason=${encodeURIComponent(reason)}&s=${Math.ceil(serverLockDuration / 1000)}`;
@@ -3582,6 +3587,8 @@ function initPrefetchSystem() {
         return;
     }
 
+    if (!PREFETCH_CONFIG.autoWarmOnLoad && !PREFETCH_CONFIG.prefetchHtmlOnLoad) return;
+
     const pagesToPrefetch = [
         '/',
         '/danh-sach',
@@ -3589,21 +3596,25 @@ function initPrefetchSystem() {
     ];
     const currentPath = window.location.pathname.split('/').pop() || 'index.html';
     
-    pagesToPrefetch.forEach(p => {
-        const cleanP = p.replace(/^\//, '');
-        const cleanCurrent = currentPath.replace(/^\//, '');
-        const isCurrentHome = p === '/' && (cleanCurrent === '' || cleanCurrent === 'index.html');
-        if (cleanP !== cleanCurrent && !isCurrentHome && !pagePrefetchLinks.has(p)) {
-            const link = document.createElement('link');
-            link.rel = 'prefetch';
-            link.href = p;
-            document.head.appendChild(link);
-            pagePrefetchLinks.add(p);
-            
-            // Also fetch to pageCache for SPA instant swap
-            prefetchPageHTML(p);
-        }
-    });
+    if (PREFETCH_CONFIG.prefetchHtmlOnLoad) {
+        pagesToPrefetch.forEach(p => {
+            const cleanP = p.replace(/^\//, '');
+            const cleanCurrent = currentPath.replace(/^\//, '');
+            const isCurrentHome = p === '/' && (cleanCurrent === '' || cleanCurrent === 'index.html');
+            if (cleanP !== cleanCurrent && !isCurrentHome && !pagePrefetchLinks.has(p)) {
+                const link = document.createElement('link');
+                link.rel = 'prefetch';
+                link.href = p;
+                document.head.appendChild(link);
+                pagePrefetchLinks.add(p);
+                
+                // Also fetch to pageCache for SPA instant swap
+                prefetchPageHTML(p);
+            }
+        });
+    }
+
+    if (!PREFETCH_CONFIG.autoWarmOnLoad) return;
 
     // Warm the list pages users are most likely to open from the homepage/header.
     queueApiPrefetch(OP_HOME, { page: 1, limit: 24 }, { priority: 7 });

@@ -7,36 +7,51 @@ const {
     setSecurityHeaders
 } = require('./_security');
 
+function applyImageCacheHeaders(res) {
+    res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+    res.setHeader('CDN-Cache-Control', 'public, s-maxage=604800, stale-while-revalidate=86400');
+    res.setHeader('Vercel-CDN-Cache-Control', 'public, s-maxage=604800, stale-while-revalidate=86400');
+}
+
+function applyNoStoreHeaders(res) {
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('CDN-Cache-Control', 'no-store');
+    res.setHeader('Vercel-CDN-Cache-Control', 'no-store');
+}
+
 module.exports = async (req, res) => {
     setSecurityHeaders(res, {
-        cacheControl: 'private, max-age=86400',
         crossOriginResourcePolicy: 'same-origin',
         referrerPolicy: 'no-referrer',
         csp: "default-src 'none'; img-src 'self' data:; frame-ancestors 'none'; object-src 'none'"
     });
 
     if (req.method === 'OPTIONS') {
+        applyNoStoreHeaders(res);
         res.setHeader('Allow', 'GET, HEAD, OPTIONS');
         return res.status(204).end();
     }
 
     if (req.method !== 'GET' && req.method !== 'HEAD') {
+        applyNoStoreHeaders(res);
         res.setHeader('Allow', 'GET, HEAD, OPTIONS');
         return res.status(405).send('Method not allowed');
     }
 
     if (!isSameOriginRequest(req)) {
+        applyNoStoreHeaders(res);
         return res.status(403).send('Cross-origin image access is blocked');
     }
 
     if (isSecurityLockedRequest(req)) {
-        res.setHeader('Cache-Control', 'private, no-store');
+        applyNoStoreHeaders(res);
         res.setHeader('Retry-After', String(getSecurityLockRetryAfter(req)));
         return res.status(423).send('Security lock is active');
     }
 
     const rateLimit = checkRateLimit(req, { prefix: 'image', limit: 1200 });
     if (!rateLimit.ok) {
+        applyNoStoreHeaders(res);
         res.setHeader('Retry-After', String(rateLimit.retryAfter));
         return res.status(429).send('Too many requests');
     }
@@ -51,16 +66,18 @@ module.exports = async (req, res) => {
         });
 
         if (!upstream.ok) {
+            applyNoStoreHeaders(res);
             return res.status(upstream.status).send('Image source is unavailable');
         }
 
         const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
         if (!contentType.startsWith('image/')) {
+            applyNoStoreHeaders(res);
             return res.status(415).send('Unsupported media type');
         }
 
         res.setHeader('Content-Type', contentType);
-        res.setHeader('Cache-Control', 'private, max-age=86400');
+        applyImageCacheHeaders(res);
 
         if (req.method === 'HEAD') return res.status(200).end();
 
@@ -68,6 +85,7 @@ module.exports = async (req, res) => {
         return res.status(200).send(Buffer.from(arrayBuffer));
     } catch (error) {
         console.error('Image proxy error:', error.message);
+        applyNoStoreHeaders(res);
         return res.status(error.statusCode || 500).send('Image proxy error');
     }
 };
