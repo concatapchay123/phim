@@ -239,12 +239,18 @@ const API_CACHE_STALE_TTL = {
 const API_CACHE_MAX_ENTRIES = 90;
 
 const PREFETCH_CONFIG = {
-    gridPagesAhead: 1,
-    maxQueueSize: 8,
-    maxRequestsPerPage: 6,
-    delayMs: 1400,
+    gridPagesAhead: 0,
+    maxQueueSize: 3,
+    maxRequestsPerPage: 2,
+    delayMs: 2500,
     dropdownPreviewLimit: 2,
     homeDeckPreviewLimit: 2,
+    apiPrefetchEnabled: false,
+    htmlPrefetchEnabled: false,
+    imagePrefetchEnabled: false,
+    passiveIntentPrefetchEnabled: false,
+    nextGridPagePrefetchEnabled: false,
+    tmdbHeroBackdropEnabled: false,
     autoWarmOnLoad: false,
     prefetchHtmlOnLoad: false
 };
@@ -260,6 +266,10 @@ function getConnectionInfo() {
 function shouldUseConservativeNetworkMode() {
     const conn = getConnectionInfo();
     return Boolean(conn && (conn.saveData || /2g|3g/.test(conn.effectiveType || '')));
+}
+
+function shouldUsePassiveIntentPrefetch() {
+    return PREFETCH_CONFIG.passiveIntentPrefetchEnabled && !shouldUseConservativeNetworkMode();
 }
 
 function getApiCacheTTL(endpoint) {
@@ -660,7 +670,8 @@ function initClientSecurityDeterrents() {
     const lockDuration = 60000;
     const serverLockDuration = 120000;
     const serverSignalReportCooldown = 30000;
-    const checkInterval = 350;
+    const checkInterval = 2500;
+    const consoleInspectionDetectionEnabled = window.__QC_ENABLE_CONSOLE_INSPECTION_DETECT === true;
     const shieldMarkup = '<div><strong style="display:block;font-size:clamp(22px,4vw,34px);font-weight:800">Trang đã tạm khóa</strong><p style="margin:12px 0 0;color:#cbd5e1;font-size:16px;line-height:1.55">Đóng công cụ kiểm tra để tiếp tục sử dụng website.</p></div>';
     const hardLockMarkup = '<main class="qc-hardlock-shell" role="alert" aria-live="assertive"><section><div class="qc-hardlock-mark">LOCKED</div><h1>Trang đã bị khóa</h1><p>Hệ thống đã phát hiện công cụ kiểm tra hoặc hành vi khai thác. Đóng các công cụ này và tải lại trang sau ít phút.</p></section></main>';
     const hardLockCss = 'html,body{width:100%;height:100%;margin:0;background:#05070d;color:#f8fafc;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;overflow:hidden}.qc-hardlock-shell{min-height:100%;display:grid;place-items:center;padding:24px;box-sizing:border-box;text-align:center}.qc-hardlock-shell section{max-width:560px}.qc-hardlock-mark{display:inline-grid;place-items:center;height:34px;padding:0 12px;border:1px solid rgba(248,113,113,.55);color:#fecaca;background:rgba(127,29,29,.35);font-size:12px;font-weight:800;letter-spacing:.14em;margin-bottom:18px}h1{font-size:clamp(28px,6vw,48px);line-height:1.05;margin:0 0 14px}p{margin:0;color:#cbd5e1;font-size:16px;line-height:1.65}';
@@ -968,7 +979,7 @@ function initClientSecurityDeterrents() {
             return true;
         }
 
-        return detectConsoleInspection();
+        return consoleInspectionDetectionEnabled && detectConsoleInspection();
     };
 
     const scheduleRecoveryCheck = (delay = 250) => {
@@ -1742,10 +1753,12 @@ function createMovieCardHTML(movie) {
             navigateToPage(`phim.html?slug=${movie.slug}`);
         }
     });
-    const warmCard = () => warmMovieIntent(movie, { priority: 10, withPosterImages: true });
-    card.addEventListener('pointerenter', warmCard, { passive: true });
-    card.addEventListener('touchstart', warmCard, { passive: true });
-    card.addEventListener('focusin', warmCard);
+    if (shouldUsePassiveIntentPrefetch()) {
+        const warmCard = () => warmMovieIntent(movie, { priority: 10, withPosterImages: true });
+        card.addEventListener('pointerenter', warmCard, { passive: true });
+        card.addEventListener('touchstart', warmCard, { passive: true });
+        card.addEventListener('focusin', warmCard);
+    }
     return card;
 }
 
@@ -1851,16 +1864,17 @@ function setupHeroSection(movie) {
     
     changeHeroBackground(backdrop);
 
-    // Asynchronously fetch high-quality TMDB original backdrop
-    fetchAPI(OP_IMAGES, { slug: movie.slug }).then(imageData => {
-        if (imageData && imageData.data && imageData.data.images) {
-            const backdrops = imageData.data.images.filter(img => img.type === 'backdrop');
-            if (backdrops.length > 0) {
-                const tmdbBackdrop = backdrops[0].file_path;
-                changeHeroBackground(tmdbBackdrop);
+    if (PREFETCH_CONFIG.tmdbHeroBackdropEnabled) {
+        fetchAPI(OP_IMAGES, { slug: movie.slug }).then(imageData => {
+            if (imageData && imageData.data && imageData.data.images) {
+                const backdrops = imageData.data.images.filter(img => img.type === 'backdrop');
+                if (backdrops.length > 0) {
+                    const tmdbBackdrop = backdrops[0].file_path;
+                    changeHeroBackground(tmdbBackdrop);
+                }
             }
-        }
-    }).catch(err => console.error('Error fetching Hero TMDB image:', err));
+        }).catch(err => console.error('Error fetching Hero TMDB image:', err));
+    }
 
     const heroTitle = elements.heroTitle;
     const heroDesc = elements.heroDesc;
@@ -1869,20 +1883,24 @@ function setupHeroSection(movie) {
     // Update play, info, and fav button handlers immediately without layout change
     elements.heroBtnPlay.onclick = (e) => {
         e.stopPropagation();
-        warmMovieIntent(movie, { immediate: true, includeTmdbImages: true, withPosterImages: true });
+        warmMovieIntent(movie, { immediate: true });
         navigateToPage(`xem-phim.html?slug=${movie.slug}&ep=0`);
     };
-    elements.heroBtnPlay.onmouseenter = () => {
-        warmMovieIntent(movie, { priority: 10, includeTmdbImages: true, withPosterImages: true });
-    };
+    if (shouldUsePassiveIntentPrefetch()) {
+        elements.heroBtnPlay.onmouseenter = () => {
+            warmMovieIntent(movie, { priority: 10, includeTmdbImages: true, withPosterImages: true });
+        };
+    }
     elements.heroBtnInfo.onclick = (e) => {
         e.stopPropagation();
         warmMovieIntent(movie, { immediate: true, includeTmdbImages: true, withPosterImages: true });
         navigateToPage(`phim.html?slug=${movie.slug}`);
     };
-    elements.heroBtnInfo.onmouseenter = () => {
-        warmMovieIntent(movie, { priority: 10, includeTmdbImages: true, withPosterImages: true });
-    };
+    if (shouldUsePassiveIntentPrefetch()) {
+        elements.heroBtnInfo.onmouseenter = () => {
+            warmMovieIntent(movie, { priority: 10, includeTmdbImages: true, withPosterImages: true });
+        };
+    }
 
     // Setup Favorite/Watchlist heart button on Hero
     if (elements.heroBtnFav) {
@@ -2099,7 +2117,7 @@ function renderGridResponse(data, type, page, endpoint, params) {
 }
 
 function scheduleGridPagePrefetch(endpoint, params, page, totalPages) {
-    if (!endpoint || shouldUseConservativeNetworkMode()) return;
+    if (!PREFETCH_CONFIG.nextGridPagePrefetchEnabled || !endpoint || shouldUseConservativeNetworkMode()) return;
 
     for (let nextP = page + 1; nextP <= Math.min(page + PREFETCH_CONFIG.gridPagesAhead, totalPages); nextP++) {
         queueApiPrefetch(endpoint, { ...params, page: nextP }, { priority: 8 });
@@ -2609,9 +2627,11 @@ function initStaticEventListeners() {
             warmBottomNav();
             if (targetUrl) navigateToPage(targetUrl);
         });
-        item.addEventListener('pointerenter', warmBottomNav, { passive: true });
-        item.addEventListener('touchstart', warmBottomNav, { passive: true });
-        item.addEventListener('focusin', warmBottomNav);
+        if (shouldUsePassiveIntentPrefetch()) {
+            item.addEventListener('pointerenter', warmBottomNav, { passive: true });
+            item.addEventListener('touchstart', warmBottomNav, { passive: true });
+            item.addEventListener('focusin', warmBottomNav);
+        }
     });
 
     elements.mobileMenuBtn.addEventListener('click', () => {
@@ -2666,9 +2686,11 @@ function initStaticEventListeners() {
             prefetchLinkResources(link.getAttribute('href'));
         }
     };
-    document.addEventListener('mouseenter', hoverHandler, { capture: true, passive: true });
-    document.addEventListener('touchstart', hoverHandler, { capture: true, passive: true });
-    document.addEventListener('focusin', hoverHandler, { capture: true, passive: true });
+    if (shouldUsePassiveIntentPrefetch()) {
+        document.addEventListener('mouseenter', hoverHandler, { capture: true, passive: true });
+        document.addEventListener('touchstart', hoverHandler, { capture: true, passive: true });
+        document.addEventListener('focusin', hoverHandler, { capture: true, passive: true });
+    }
 
     window.addEventListener('popstate', (e) => {
         navigateToPage(window.location.href, false);
@@ -2688,9 +2710,11 @@ function initDynamicPageEventListeners() {
             warmViewAll();
             navigateToPage(`danh-sach.html?type=${cat}`);
         });
-        btn.addEventListener('pointerenter', warmViewAll, { passive: true });
-        btn.addEventListener('touchstart', warmViewAll, { passive: true });
-        btn.addEventListener('focusin', warmViewAll);
+        if (shouldUsePassiveIntentPrefetch()) {
+            btn.addEventListener('pointerenter', warmViewAll, { passive: true });
+            btn.addEventListener('touchstart', warmViewAll, { passive: true });
+            btn.addEventListener('focusin', warmViewAll);
+        }
     });
 
     const quickSearchChips = document.querySelectorAll('.quick-search-chip');
@@ -2706,9 +2730,11 @@ function initDynamicPageEventListeners() {
             warmQuickSearch();
             navigateToPage(`danh-sach.html?type=search&keyword=${encodeURIComponent(chip.dataset.keyword)}`);
         });
-        chip.addEventListener('pointerenter', warmQuickSearch, { passive: true });
-        chip.addEventListener('touchstart', warmQuickSearch, { passive: true });
-        chip.addEventListener('focusin', warmQuickSearch);
+        if (shouldUsePassiveIntentPrefetch()) {
+            chip.addEventListener('pointerenter', warmQuickSearch, { passive: true });
+            chip.addEventListener('touchstart', warmQuickSearch, { passive: true });
+            chip.addEventListener('focusin', warmQuickSearch);
+        }
     });
 
     const prevScrollBtns = document.querySelectorAll('.scroll-btn.prev');
@@ -2885,9 +2911,11 @@ function initCategoryDeck() {
                 navigateToPage(`danh-sach.html?type=the-loai&keyword=${genreSlug}`);
             }
         });
-        card.addEventListener('pointerenter', warmDeckCard, { passive: true });
-        card.addEventListener('touchstart', warmDeckCard, { passive: true });
-        card.addEventListener('focusin', warmDeckCard);
+        if (shouldUsePassiveIntentPrefetch()) {
+            card.addEventListener('pointerenter', warmDeckCard, { passive: true });
+            card.addEventListener('touchstart', warmDeckCard, { passive: true });
+            card.addEventListener('focusin', warmDeckCard);
+        }
     });
 }
 
@@ -3264,20 +3292,11 @@ async function playMovieFromSlugPage(slug, episodeIndex = 0, serverIndex = 0) {
     }
     
     playerBody.innerHTML = '<div class="loader" style="margin: 4rem auto;"></div>';
-    // Parallel fetch for details and images
-    const [data, imageData] = await Promise.all([
-        fetchAPI(OP_DETAILS, { slug }),
-        fetchAPI(OP_IMAGES, { slug })
-    ]);
+    const data = await fetchAPI(OP_DETAILS, { slug });
     
     if (data && data.data && data.data.item) {
-        let tmdbBackdrop = null;
-        if (imageData && imageData.data && imageData.data.images) {
-            const backdrops = imageData.data.images.filter(img => img.type === 'backdrop');
-            if (backdrops.length > 0) {
-                tmdbBackdrop = backdrops[0].file_path;
-            }
-        }
+        const cachedImages = selectTmdbImages(getCachedApiData(OP_IMAGES, { slug }, { allowStale: true }));
+        const tmdbBackdrop = cachedImages.backdrop;
         renderMoviePlayerPage(data.data.item, episodeIndex, serverIndex, tmdbBackdrop);
     } else {
         playerBody.innerHTML = `
@@ -3515,7 +3534,7 @@ const pagePrefetchLinks = new Set();
 
 // Silent image prefetch helper
 function prefetchImage(src) {
-    if (!src || shouldUseConservativeNetworkMode()) return;
+    if (!PREFETCH_CONFIG.imagePrefetchEnabled || !src || shouldUseConservativeNetworkMode()) return;
     const finalUrl = getImageUrl(src);
     if (prefetchImage.cache[finalUrl]) return;
     prefetchImage.cache[finalUrl] = true;
@@ -3528,6 +3547,7 @@ prefetchImage.cache = {};
 function queueApiPrefetch(endpoint, params = {}, options = {}) {
     try {
         const priority = Number(options.priority || 0);
+        if (!PREFETCH_CONFIG.apiPrefetchEnabled && !options.force) return;
         if (shouldUseConservativeNetworkMode() && !options.allowOnSlow) return;
         if (document.visibilityState === 'hidden' && priority < 9) return;
 
@@ -3716,6 +3736,7 @@ function shouldHandleLink(link) {
 
 async function prefetchPageHTML(urlStr) {
     try {
+        if (!PREFETCH_CONFIG.htmlPrefetchEnabled) return;
         const targetUrl = normalizeRouteUrl(urlStr);
         const cacheKey = targetUrl.pathname.replace(/\.min\.html$/, '.html').replace(/\.html$/, '');
         if (pageCache.has(cacheKey)) return;
@@ -3732,6 +3753,7 @@ async function prefetchPageHTML(urlStr) {
 
 function prefetchLinkResources(urlStr) {
     try {
+        if (!PREFETCH_CONFIG.htmlPrefetchEnabled && !PREFETCH_CONFIG.apiPrefetchEnabled) return;
         const targetUrl = normalizeRouteUrl(urlStr);
         
         prefetchPageHTML(urlStr);

@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const files = ['index.min.html', 'danh-sach.min.html', 'phim.min.html', 'xem-phim.min.html', 'tu-phim.min.html', 'security-locked.min.html'];
-const appVersion = '1.0.17';
+const appVersion = '1.0.18';
 const styleVersion = '1.0.6';
 
 files.forEach(file => {

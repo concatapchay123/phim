@@ -41,7 +41,7 @@ const CLIENT_CACHE_BY_KIND = {
 
 function getClientCacheControl(kind) {
     const cache = CLIENT_CACHE_BY_KIND[String(kind || '')] || { ttl: 300, stale: 60 };
-    const browserMaxAge = Math.min(90, Math.max(20, Math.floor(cache.ttl / 6)));
+    const browserMaxAge = Math.min(cache.ttl, Math.max(60, Math.floor(cache.ttl / 2)));
     return `public, max-age=${browserMaxAge}, s-maxage=${cache.ttl}, stale-while-revalidate=${cache.stale}`;
 }
 

@@ -7,8 +7,8 @@ const PLAYER_TOKEN_SECRET = process.env.PLAYER_TOKEN_SECRET || process.env.JWT_S
 const PLAYER_TOKEN_TTL_SECONDS = Math.max(30, Number(process.env.PLAYER_TOKEN_TTL_SECONDS || 300));
 const HLS_VALIDATION_TIMEOUT_MS = Math.max(800, Number(process.env.HLS_VALIDATION_TIMEOUT_MS || 2200));
 const IMAGE_TOKEN_TTL_SECONDS = Math.max(300, Number(process.env.IMAGE_TOKEN_TTL_SECONDS || 1209600));
-const ENABLE_STREAM_PROXY = process.env.ENABLE_STREAM_PROXY === 'true';
-const ENABLE_IMAGE_PROXY = process.env.ENABLE_IMAGE_PROXY === 'true';
+const ENABLE_STREAM_PROXY = process.env.ENABLE_STREAM_PROXY === 'true' && process.env.ALLOW_HIGH_BANDWIDTH_STREAM_PROXY === 'true';
+const ENABLE_IMAGE_PROXY = process.env.ENABLE_IMAGE_PROXY === 'true' && process.env.ALLOW_HIGH_BANDWIDTH_IMAGE_PROXY === 'true';
 const SECURITY_LOCK_SECRET = process.env.SECURITY_LOCK_SECRET || PLAYER_TOKEN_SECRET;
 const SECURITY_LOCK_COOKIE_NAME = 'qc_security_lock';
 const SECURITY_LOCK_SECONDS = Math.min(300, Math.max(5, Number(process.env.SECURITY_LOCK_SECONDS || 20)));
