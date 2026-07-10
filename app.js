@@ -1257,6 +1257,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Initial DOM binding & dynamic/static event listeners
     updateDOMReferences();
+    syncNavIndicator({ immediate: true });
     initStaticEventListeners();
     initDynamicPageEventListeners();
     
@@ -1562,6 +1563,7 @@ function switchView(viewName) {
     }
     
     syncBottomNavigation();
+    syncNavIndicator();
     closeMobileMenu();
     
     // Page Transitions using GSAP
@@ -1617,6 +1619,92 @@ function switchView(viewName) {
     
     // Scroll to top
     window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+const NAV_INDICATOR_BASE_WIDTH = 100;
+const NAV_INDICATOR_SETTLE_MS = 430;
+
+function waitForNextPaint() {
+    return new Promise(resolve => {
+        requestAnimationFrame(() => requestAnimationFrame(resolve));
+    });
+}
+
+function waitForNavIndicatorSettle(startedAt) {
+    const remaining = NAV_INDICATOR_SETTLE_MS - (performance.now() - startedAt);
+    if (remaining <= 0) return Promise.resolve();
+    return new Promise(resolve => setTimeout(resolve, remaining));
+}
+
+// Keep the selected navigation item visually connected while the SPA swaps content.
+// Its size changes through scaleX, keeping the animation on the compositor thread.
+function syncNavIndicator({ immediate = false } = {}) {
+    const nav = elements.navLinks || document.getElementById('navLinks');
+    if (!nav) return;
+
+    let indicator = nav.querySelector('.nav-active-indicator');
+    if (!indicator) {
+        indicator = document.createElement('span');
+        indicator.className = 'nav-active-indicator';
+        indicator.setAttribute('aria-hidden', 'true');
+        nav.prepend(indicator);
+    }
+
+    const activeLink = nav.querySelector('.nav-link.active');
+    if (!activeLink) {
+        nav.classList.remove('has-active-indicator');
+        return;
+    }
+
+    const navRect = nav.getBoundingClientRect();
+    const linkRect = activeLink.getBoundingClientRect();
+    const x = linkRect.left - navRect.left;
+    const y = linkRect.top - navRect.top;
+
+    if (immediate) indicator.style.transition = 'none';
+    indicator.style.height = `${linkRect.height}px`;
+    indicator.style.transform = `translate3d(${x}px, ${y}px, 0) scaleX(${linkRect.width / NAV_INDICATOR_BASE_WIDTH})`;
+    nav.classList.add('has-active-indicator');
+
+    if (immediate) {
+        // Force the initial position to paint before restoring the transition.
+        void indicator.offsetWidth;
+        indicator.style.removeProperty('transition');
+    }
+}
+
+function setNavigationHighlight(linkEl, { immediate = false } = {}) {
+    document.querySelectorAll('.nav-link.active').forEach(link => link.classList.remove('active'));
+    if (linkEl) linkEl.classList.add('active');
+    syncBottomNavigation();
+    syncNavIndicator({ immediate });
+}
+
+function previewNavigationHighlight(targetUrl) {
+    const pageName = targetUrl.pathname.split('/').pop().replace(/\.html$/, '').replace(/\.min$/, '');
+    let targetLink = null;
+
+    if (pageName === '' || pageName === 'index') {
+        targetLink = elements.navTrangChu;
+    } else if (pageName === 'tu-phim') {
+        targetLink = elements.navTuPhim;
+    } else if (pageName === 'danh-sach') {
+        const type = targetUrl.searchParams.get('type');
+        const linksByType = {
+            'phim-moi-cap-nhat': elements.navPhimMoi,
+            'phim-le': elements.navPhimLe,
+            'phim-bo': elements.navPhimBo,
+            'phim-chieu-rap': elements.navPhimChieuRap,
+            'the-loai': elements.navTheLoai,
+            'quoc-gia': elements.navQuocGia
+        };
+        targetLink = linksByType[type] || null;
+    }
+
+    const activeLink = document.querySelector('.nav-link.active');
+    const indicatorWillMove = Boolean(targetLink && targetLink !== activeLink);
+    setNavigationHighlight(targetLink);
+    return indicatorWillMove;
 }
 
 function syncBottomNavigation() {
@@ -2695,6 +2783,15 @@ function initStaticEventListeners() {
     window.addEventListener('popstate', (e) => {
         navigateToPage(window.location.href, false);
     });
+
+    let navIndicatorResizeFrame = null;
+    window.addEventListener('resize', () => {
+        if (navIndicatorResizeFrame) cancelAnimationFrame(navIndicatorResizeFrame);
+        navIndicatorResizeFrame = requestAnimationFrame(() => {
+            syncNavIndicator({ immediate: true });
+            navIndicatorResizeFrame = null;
+        });
+    }, { passive: true });
 }
 
 function initDynamicPageEventListeners() {
@@ -3846,6 +3943,11 @@ async function navigateToPage(urlStr, push = true) {
 
     try {
         targetUrl = normalizeRouteUrl(urlStr);
+        const navigationStartedAt = performance.now();
+        const shouldProtectNavAnimation = previewNavigationHighlight(targetUrl);
+
+        // Let the browser commit the pill's first frame before parsing or swapping a new page.
+        if (shouldProtectNavAnimation) await waitForNextPaint();
         const path = targetUrl.pathname;
         const pageName = path.split('/').pop().replace(/\.html$/, '').replace(/\.min$/, '');
         const cacheKey = path.replace(/\.min\.html$/, '.html').replace(/\.html$/, '');
@@ -3857,6 +3959,9 @@ async function navigateToPage(urlStr, push = true) {
             htmlText = await res.text();
             pageCache.set(cacheKey, htmlText);
         }
+
+        // Parsing and routing can be expensive. Keep them out of the indicator's animation window.
+        if (shouldProtectNavAnimation) await waitForNavIndicatorSettle(navigationStartedAt);
 
         const mainEl = document.querySelector('main.main-content');
         if (!mainEl) {
@@ -4067,9 +4172,7 @@ function runPageRouting(url) {
     }
 
     const highlightNav = (linkEl) => {
-        document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
-        if (linkEl) linkEl.classList.add('active');
-        syncBottomNavigation();
+        setNavigationHighlight(linkEl);
     };
 
     if (isGridPage) {
@@ -4082,6 +4185,8 @@ function runPageRouting(url) {
         else if (type === 'phim-le') highlightNav(elements.navPhimLe);
         else if (type === 'phim-chieu-rap') highlightNav(elements.navPhimChieuRap);
         else if (type === 'phim-moi-cap-nhat') highlightNav(elements.navPhimMoi);
+        else if (type === 'the-loai') highlightNav(elements.navTheLoai);
+        else if (type === 'quoc-gia') highlightNav(elements.navQuocGia);
         else highlightNav(null);
 
         return Promise.allSettled([
