@@ -4929,35 +4929,20 @@ html[data-theme="light"] .deck-title {
     }
 }
 
-/* Keep the mobile toolbar aligned with the page container on small screens. */
+/* Keep the mobile toolbar inside the page frame on small screens. */
 @media (max-width: 768px) {
     .bottom-nav {
-        left: clamp(14px, 4vw, 22px);
-        right: clamp(14px, 4vw, 22px);
-        width: auto;
-        transform: none;
+        --mobile-nav-inset: clamp(24px, 8vw, 30px);
+        left: 50%;
+        right: auto;
+        width: min(460px, calc(100vw - (var(--mobile-nav-inset) * 2)));
+        max-width: calc(100vw - (var(--mobile-nav-inset) * 2));
+        transform: translateX(-50%);
         overflow: hidden;
         box-sizing: border-box;
     }
 
     .bottom-nav-item.active {
         max-width: 100%;
-    }
-
-    body:has(.details-page-wrapper) .bottom-nav {
-        left: calc(clamp(14px, 4vw, 22px) + 16px);
-        right: calc(clamp(14px, 4vw, 22px) + 16px);
-    }
-}
-
-@media (max-width: 420px) {
-    .bottom-nav {
-        left: 14px;
-        right: 14px;
-    }
-
-    body:has(.details-page-wrapper) .bottom-nav {
-        left: 30px;
-        right: 30px;
     }
 }
