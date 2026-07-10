@@ -1521,7 +1521,7 @@ const libraryManager = {
         elements.historyEmpty.classList.add('hidden');
         
         history.forEach(item => {
-            const thumbUrl = getImageUrl(item.thumb_url, 'assets/logo.png', { width: 160, quality: 70 });
+            const thumbUrl = getImageUrl(item.thumb_url, 'assets/logo.png', { width: 320, quality: 80 });
             const timeAgo = formatTimeAgo(item.watchedAt);
             
             const row = document.createElement('div');
@@ -1872,7 +1872,7 @@ function renderRow(response, container) {
  */
 function createMovieCardHTML(movie) {
     const imgSource = (movie.poster_url && movie.poster_url !== '') ? movie.poster_url : movie.thumb_url;
-    const finalImgUrl = getImageUrl(imgSource, 'assets/logo.png', { width: 360, quality: 72 });
+    const finalImgUrl = getImageUrl(imgSource, 'assets/logo.png', { width: 720, quality: 82 });
     const year = movie.year || 'N/A';
     const quality = movie.quality || 'HD';
     const lang = movie.lang || 'Vietsub';
@@ -2024,8 +2024,8 @@ function changeHeroBackground(newImageUrl) {
  */
 function setupHeroSection(movie) {
     // Background image set to poster/backdrop if exists
-    const posterUrl = getImageUrl(movie.poster_url, 'assets/logo.png', { width: 1280, quality: 76 });
-    const thumbUrl = getImageUrl(movie.thumb_url, 'assets/logo.png', { width: 1280, quality: 76 });
+    const posterUrl = getImageUrl(movie.poster_url, 'assets/logo.png', { width: 1600, quality: 82 });
+    const thumbUrl = getImageUrl(movie.thumb_url, 'assets/logo.png', { width: 1600, quality: 82 });
     const backdrop = movie.thumb_url ? thumbUrl : posterUrl;
     
     changeHeroBackground(backdrop);
@@ -2393,7 +2393,7 @@ async function fetchMovieDetails(slug) {
 }
 
 function renderMovieDetails(movie, tmdbBackdrop = null, tmdbPoster = null) {
-    const posterUrl = getImageUrl(tmdbPoster || movie.poster_url, 'assets/logo.png', { width: 480, quality: 76 });
+    const posterUrl = getImageUrl(tmdbPoster || movie.poster_url, 'assets/logo.png', { width: 900, quality: 82 });
     const thumbUrl = getImageUrl(tmdbBackdrop || movie.thumb_url || movie.poster_url, 'assets/logo.png', { width: 1280, quality: 76 });
     const backdropImg = getImageUrl(tmdbBackdrop || movie.thumb_url || movie.poster_url, posterUrl, { width: 1280, quality: 76 });
 
@@ -3121,7 +3121,7 @@ function setupHeroSwitcher(movies) {
 
     elements.heroThumbs.innerHTML = '';
     movies.forEach((movie, index) => {
-        const thumbUrl = getImageUrl(movie.thumb_url || movie.poster_url, 'assets/logo.png', { width: 240, quality: 70 });
+        const thumbUrl = getImageUrl(movie.thumb_url || movie.poster_url, 'assets/logo.png', { width: 420, quality: 80 });
         const year = movie.year || 'N/A';
         const quality = movie.quality || 'HD';
         const name = escapeHTML(movie.name);
@@ -3295,7 +3295,7 @@ function renderMovieDetailsPage(movie, tmdbBackdrop = null, tmdbPoster = null) {
     const lastEp = movieHistory ? movieHistory.episodeIndex : 0;
     const lastSv = movieHistory ? movieHistory.serverIndex : 0;
 
-    const posterUrl = getImageUrl(tmdbPoster || movie.poster_url, 'assets/logo.png', { width: 480, quality: 76 });
+    const posterUrl = getImageUrl(tmdbPoster || movie.poster_url, 'assets/logo.png', { width: 900, quality: 82 });
     const thumbUrl = getImageUrl(tmdbBackdrop || movie.thumb_url || movie.poster_url, 'assets/logo.png', { width: 1280, quality: 76 });
     const backdropImg = getImageUrl(tmdbBackdrop || movie.thumb_url || movie.poster_url, posterUrl, { width: 1280, quality: 76 });
 
@@ -3500,7 +3500,7 @@ async function renderMoviePlayerPage(movie, episodeIndex = 0, serverIndex = 0, t
     // Save to Watch History
     if (playerUrl) libraryManager.addToHistory(movie, epName, episodeIndex, serverIndex);
 
-    const posterUrl = getImageUrl(movie.poster_url, 'assets/logo.png', { width: 480, quality: 76 });
+    const posterUrl = getImageUrl(movie.poster_url, 'assets/logo.png', { width: 900, quality: 82 });
     const backdropImg = getImageUrl(tmdbBackdrop || movie.thumb_url || movie.poster_url, posterUrl, { width: 1280, quality: 76 });
 
     let html = `
