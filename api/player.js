@@ -1,4 +1,5 @@
 const {
+    assertSecurityConfiguration,
     checkRateLimit,
     getSecurityLockRetryAfter,
     isSameOriginRequest,
@@ -29,6 +30,12 @@ module.exports = async (req, res) => {
             "object-src 'none'"
         ].join('; ')
     });
+
+    try {
+        assertSecurityConfiguration();
+    } catch (error) {
+        return res.status(error.statusCode || 503).send('Service temporarily unavailable');
+    }
 
     if (req.method === 'OPTIONS') {
         res.setHeader('Allow', 'GET, OPTIONS');

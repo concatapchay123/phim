@@ -1,4 +1,5 @@
 const {
+    assertSecurityConfiguration,
     checkRateLimit,
     isSameOriginRequest,
     setSecurityHeaders,
@@ -10,6 +11,12 @@ module.exports = async (req, res) => {
         cacheControl: 'private, no-store',
         csp: "default-src 'none'; frame-ancestors 'none'; object-src 'none'"
     });
+
+    try {
+        assertSecurityConfiguration();
+    } catch (error) {
+        return res.status(error.statusCode || 503).json({ error: 'Service temporarily unavailable' });
+    }
 
     if (req.method === 'OPTIONS') {
         res.setHeader('Allow', 'POST, OPTIONS');

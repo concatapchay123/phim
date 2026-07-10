@@ -1,5 +1,6 @@
 const {
     API_BASE_URL,
+    assertSecurityConfiguration,
     buildClientApiUrl,
     checkRateLimit,
     getSecurityLockRetryAfter,
@@ -140,6 +141,13 @@ function refreshMemoryCache(cacheKey, targetUrl, kind) {
 module.exports = async (req, res) => {
     const kind = req.query.q || req.query.kind;
     setSecurityHeaders(res);
+
+    try {
+        assertSecurityConfiguration();
+    } catch (error) {
+        applyNoStoreHeaders(res);
+        return res.status(error.statusCode || 503).json({ error: 'Service temporarily unavailable' });
+    }
 
     const requestPath = (() => {
         try {

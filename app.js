@@ -687,15 +687,16 @@ function initClientSecurityDeterrents() {
     if (window.__qcSecurityDeterrentsReady) return;
     window.__qcSecurityDeterrentsReady = true;
 
-    // Browser-side DevTools detection is easy to bypass and can misidentify
-    // resized, split-screen or embedded browsers. Security remains enforced by
-    // CSP, same-origin API checks, allowlists and server-side rate limits.
-    return;
+    // This is a deterrent only: code running in a browser can always be
+    // modified by the visitor. The server remains the enforcement point for
+    // secrets, tokens, origin checks and rate limiting.
 
     const lockStorageKey = 'qc_security_lock_until';
     const lockBroadcastKey = 'qc_security_lock_ping';
     const serverLockEndpoint = '/api/security-lock';
-    const serverSignalReportingEnabled = window.__QC_ENABLE_SECURITY_SIGNAL_REPORTING === true;
+    // Allow an explicit opt-out for local troubleshooting, but report signals
+    // in normal deployments so the server-side lock is actually activated.
+    const serverSignalReportingEnabled = window.__QC_ENABLE_SECURITY_SIGNAL_REPORTING !== false;
     const hardLockPath = '/security-locked';
     const lockDuration = 60000;
     const serverLockDuration = 120000;

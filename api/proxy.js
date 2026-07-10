@@ -1,5 +1,6 @@
 // Vercel Serverless Function - API Proxy
 const {
+    assertSecurityConfiguration,
     buildUpstreamApiUrl,
     checkRateLimit,
     getSecurityLockRetryAfter,
@@ -23,6 +24,13 @@ function applyNoStoreHeaders(res) {
 
 module.exports = async (req, res) => {
     setSecurityHeaders(res);
+
+    try {
+        assertSecurityConfiguration();
+    } catch (error) {
+        applyNoStoreHeaders(res);
+        return res.status(error.statusCode || 503).json({ error: 'Service temporarily unavailable' });
+    }
 
     if (process.env.ENABLE_LEGACY_PROXY !== 'true') {
         applyNoStoreHeaders(res);

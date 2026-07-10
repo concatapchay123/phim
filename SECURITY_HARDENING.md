@@ -4,11 +4,34 @@
 
 Set these in Vercel Project Settings > Environment Variables:
 
-- `PLAYER_TOKEN_SECRET`: long random string, at least 32 characters.
-- `SECURITY_LOCK_SECRET`: long random string, different from `PLAYER_TOKEN_SECRET`.
+- `PLAYER_TOKEN_SECRET`: random secret of at least 32 characters. Required in production; do not reuse a JWT or application secret.
+- `SECURITY_LOCK_SECRET`: a different random secret of at least 32 characters. Required in production.
 - `ENABLE_STREAM_PROXY`: leave unset or `false` unless you intentionally want video traffic to pass through Vercel Functions.
 - `ENABLE_IMAGE_PROXY`: leave unset or `false` unless you intentionally want image traffic to pass through Vercel Functions.
 - `ENABLE_LEGACY_PROXY`: leave unset or `false`.
+
+The application deliberately fails closed for signed image/stream URLs and the
+server-side security lock when these secrets are not configured in production.
+Use a password manager or `openssl rand -base64 48` to generate each value.
+
+## What the browser can and cannot protect
+
+The DevTools detector is enabled as a user-interface deterrent: it locks the
+current browser session and reports the signal to the server. It is not a
+security boundary, because users can modify JavaScript, use an undocked
+inspector, or replay any request their browser is authorized to make.
+
+Real protection in this project is enforced on the server: restricted API
+paths and query parameters, strict same-origin request checks, signed
+purpose-bound proxy tokens, private-network target blocking, disabled-by-
+default proxies, response sanitisation and rate limits. Direct requests that
+do not originate from the site now receive `403`.
+
+No website can hide JavaScript, HTML, images, or a non-DRM video stream once
+they have been delivered to a viewer. If the video itself must be protected,
+use a licensed DRM provider (for example Widevine/FairPlay/PlayReady) with
+authenticated, short-lived playback licences. Do not treat obfuscation,
+minification, disabled right-click, or DevTools detection as DRM.
 
 ## Recommended Vercel Firewall rules
 

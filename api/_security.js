@@ -3,7 +3,10 @@ const crypto = require('crypto');
 const API_BASE_URL = (process.env.MOVIE_API_BASE_URL || 'https://ophim1.com').replace(/\/+$/, '');
 const FALLBACK_API_BASE_URL = (process.env.FALLBACK_MOVIE_API_BASE_URL || 'https://phimapi.com').replace(/\/+$/, '');
 const CDN_IMAGE_BASE_URL = (process.env.CDN_IMAGE_BASE_URL || 'https://img.ophim.live/uploads/movies/').replace(/\/?$/, '/');
-const PLAYER_TOKEN_SECRET = process.env.PLAYER_TOKEN_SECRET || process.env.JWT_SECRET || 'quanchill-local-player-secret-change-me';
+const IS_PRODUCTION = process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production';
+const LOCAL_PLAYER_TOKEN_SECRET = 'quanchill-local-player-secret-change-me';
+const LOCAL_SECURITY_LOCK_SECRET = 'quanchill-local-security-lock-secret-change-me';
+const PLAYER_TOKEN_SECRET = process.env.PLAYER_TOKEN_SECRET || (IS_PRODUCTION ? '' : LOCAL_PLAYER_TOKEN_SECRET);
 const PLAYER_TOKEN_TTL_SECONDS = Math.max(30, Number(process.env.PLAYER_TOKEN_TTL_SECONDS || 300));
 const HLS_VALIDATION_TIMEOUT_MS = Math.max(800, Number(process.env.HLS_VALIDATION_TIMEOUT_MS || 2200));
 // API responses may be kept in the browser cache for up to 15 days.  Keep image
@@ -12,7 +15,7 @@ const HLS_VALIDATION_TIMEOUT_MS = Math.max(800, Number(process.env.HLS_VALIDATIO
 const IMAGE_TOKEN_TTL_SECONDS = Math.max(2592000, Number(process.env.IMAGE_TOKEN_TTL_SECONDS || 2592000));
 const ENABLE_STREAM_PROXY = process.env.ENABLE_STREAM_PROXY === 'true' && process.env.ALLOW_HIGH_BANDWIDTH_STREAM_PROXY === 'true';
 const ENABLE_IMAGE_PROXY = process.env.ENABLE_IMAGE_PROXY === 'true' && process.env.ALLOW_HIGH_BANDWIDTH_IMAGE_PROXY === 'true';
-const SECURITY_LOCK_SECRET = process.env.SECURITY_LOCK_SECRET || PLAYER_TOKEN_SECRET;
+const SECURITY_LOCK_SECRET = process.env.SECURITY_LOCK_SECRET || (IS_PRODUCTION ? '' : LOCAL_SECURITY_LOCK_SECRET);
 const SECURITY_LOCK_COOKIE_NAME = 'qc_security_lock';
 const SECURITY_LOCK_SECONDS = Math.min(300, Math.max(5, Number(process.env.SECURITY_LOCK_SECONDS || 20)));
 const PLAYER_UNAVAILABLE_MESSAGE = 'Phim hiện đang được cập nhật';
@@ -67,6 +70,20 @@ const IMAGE_HOST_ALLOWLIST = new Set([
     'image.tmdb.org',
     'via.placeholder.com'
 ]);
+
+function assertSecurityConfiguration() {
+    if (!IS_PRODUCTION) return;
+
+    const invalidSecrets = [
+        ['PLAYER_TOKEN_SECRET', PLAYER_TOKEN_SECRET],
+        ['SECURITY_LOCK_SECRET', SECURITY_LOCK_SECRET]
+    ].filter(([, value]) => String(value || '').length < 32)
+        .map(([name]) => name);
+
+    if (invalidSecrets.length > 0 || safeEqualString(PLAYER_TOKEN_SECRET, SECURITY_LOCK_SECRET)) {
+        throw createHttpError('Service security configuration is incomplete', 503);
+    }
+}
 
 const rateBuckets = new Map();
 
@@ -156,6 +173,7 @@ function readSecurityLock(req) {
 }
 
 function setSecurityLockCookie(req, res, options = {}) {
+    assertSecurityConfiguration();
     const lock = createSecurityLockValue(options);
     const cookieParts = [
         `${SECURITY_LOCK_COOKIE_NAME}=${lock.value}`,
@@ -335,7 +353,7 @@ function createImageProxyPath(src, sourceKey = '') {
     try {
         const targetUrl = normalizeImageUrl(src, sourceKey);
         if (!ENABLE_IMAGE_PROXY) return targetUrl.toString();
-        return `/api/i?t=${encodeURIComponent(createSignedToken(targetUrl, IMAGE_TOKEN_TTL_SECONDS))}`;
+        return `/api/i?t=${encodeURIComponent(createSignedToken(targetUrl, IMAGE_TOKEN_TTL_SECONDS, 'image'))}`;
     } catch (error) {
         return '';
     }
@@ -366,15 +384,13 @@ function normalizeImageUrl(src, sourceKey = '') {
 }
 
 function resolveImageTarget(query = {}) {
-    if (query.t) return verifySignedToken(query.t);
-    if (query.p) return normalizeImageUrl(query.p);
-    throw createHttpError('Missing image token', 400);
+    return verifySignedToken(query.t, 'image');
 }
 
 function getClientIp(req) {
-    const forwardedFor = req.headers['x-forwarded-for'];
-    if (typeof forwardedFor === 'string' && forwardedFor.length > 0) {
-        return forwardedFor.split(',')[0].trim();
+    const forwardedFor = req.headers['x-vercel-forwarded-for'] || req.headers['x-forwarded-for'];
+    if (process.env.VERCEL === '1' && typeof forwardedFor === 'string' && forwardedFor.length > 0) {
+        return forwardedFor.split(',')[0].trim().slice(0, 128);
     }
     return req.socket?.remoteAddress || req.connection?.remoteAddress || 'unknown';
 }
@@ -421,6 +437,12 @@ function isSameOriginRequest(req) {
     const expectedOrigin = getRequestOrigin(req);
     const origin = req.headers.origin;
     const referer = req.headers.referer || req.headers.referrer;
+    const fetchSite = String(req.headers['sec-fetch-site'] || '').toLowerCase();
+
+    // A protected endpoint must be reached from a page on this origin.  The
+    // former permissive fallback accepted requests with neither header, which
+    // made direct curl/script requests look legitimate.
+    if (!expectedOrigin || (!origin && !referer)) return false;
 
     if (origin && expectedOrigin && origin !== expectedOrigin) return false;
 
@@ -431,6 +453,8 @@ function isSameOriginRequest(req) {
             return false;
         }
     }
+
+    if (fetchSite && fetchSite !== 'same-origin') return false;
 
     return true;
 }
@@ -459,9 +483,12 @@ function setSecurityHeaders(res, options = {}) {
     }
 }
 
-function createSignedToken(url, ttlSeconds = PLAYER_TOKEN_TTL_SECONDS) {
+function createSignedToken(url, ttlSeconds = PLAYER_TOKEN_TTL_SECONDS, purpose = 'stream') {
+    assertSecurityConfiguration();
+    const targetUrl = assertSafeProxyTarget(url, purpose);
     const payload = Buffer.from(JSON.stringify({
-        u: String(url),
+        u: targetUrl,
+        p: purpose,
         exp: Date.now() + ttlSeconds * 1000
     }), 'utf8');
     const iv = crypto.randomBytes(12);
@@ -471,7 +498,8 @@ function createSignedToken(url, ttlSeconds = PLAYER_TOKEN_TTL_SECONDS) {
     return `${iv.toString('base64url')}.${encrypted.toString('base64url')}.${tag.toString('base64url')}`;
 }
 
-function verifySignedToken(token) {
+function verifySignedToken(token, expectedPurpose = 'stream') {
+    assertSecurityConfiguration();
     const [ivPart, encryptedPart, tagPart] = String(token || '').split('.');
     if (!ivPart || !encryptedPart || !tagPart) {
         throw createHttpError('Missing signed token', 401);
@@ -494,7 +522,7 @@ function verifySignedToken(token) {
         throw createHttpError('Invalid signed token', 401);
     }
 
-    if (!data.u || !/^https?:\/\//i.test(data.u)) {
+    if (!data.u || data.p !== expectedPurpose) {
         throw createHttpError('Invalid stream target', 401);
     }
 
@@ -502,7 +530,43 @@ function verifySignedToken(token) {
         throw createHttpError('Expired signed token', 401);
     }
 
-    return data.u;
+    return assertSafeProxyTarget(data.u, expectedPurpose);
+}
+
+function assertSafeProxyTarget(urlValue, purpose) {
+    let targetUrl;
+    try {
+        targetUrl = new URL(String(urlValue || ''));
+    } catch (error) {
+        throw createHttpError('Invalid proxy target', 401);
+    }
+
+    if (!['http:', 'https:'].includes(targetUrl.protocol) || targetUrl.username || targetUrl.password) {
+        throw createHttpError('Invalid proxy target', 401);
+    }
+
+    const hostname = targetUrl.hostname.toLowerCase();
+    if (hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.endsWith('.local') || isPrivateIpAddress(hostname)) {
+        throw createHttpError('Unsafe proxy target', 403);
+    }
+
+    if (purpose === 'image' && !IMAGE_HOST_ALLOWLIST.has(hostname)) {
+        throw createHttpError('Image host is not allowed', 403);
+    }
+
+    return targetUrl.toString();
+}
+
+function isPrivateIpAddress(hostname) {
+    if (hostname === '::1' || hostname === '[::1]' || hostname.startsWith('fc') || hostname.startsWith('fd')) return true;
+    const octets = hostname.split('.').map(part => Number.parseInt(part, 10));
+    if (octets.length !== 4 || octets.some(part => !Number.isInteger(part) || part < 0 || part > 255)) return false;
+    return octets[0] === 10 ||
+        octets[0] === 127 ||
+        octets[0] === 0 ||
+        (octets[0] === 169 && octets[1] === 254) ||
+        (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+        (octets[0] === 192 && octets[1] === 168);
 }
 
 function getTokenCipherKey() {
@@ -526,7 +590,7 @@ function isAbsoluteHttpUrl(urlValue = '') {
 }
 
 function rewriteM3u8Playlist(playlistText, playlistUrl) {
-    const makeStreamUrl = target => `/api/stream?t=${encodeURIComponent(createSignedToken(absolutizeUrl(target, playlistUrl)))}`;
+    const makeStreamUrl = target => `/api/stream?t=${encodeURIComponent(createSignedToken(absolutizeUrl(target, playlistUrl), PLAYER_TOKEN_TTL_SECONDS, 'stream'))}`;
 
     return String(playlistText).split(/\r?\n/).map(line => {
         const trimmed = line.trim();
@@ -762,7 +826,7 @@ function renderPlayerHtml(source = {}, slug, epIndex, svIndex) {
     if (source.url && (source.type === 'hls' || source.type === 'hls-direct' || isHlsUrl(source.url))) {
         const streamUrl = source.type === 'hls-direct'
             ? source.url
-            : `/api/stream?t=${encodeURIComponent(createSignedToken(source.url))}`;
+            : `/api/stream?t=${encodeURIComponent(createSignedToken(source.url, PLAYER_TOKEN_TTL_SECONDS, 'stream'))}`;
         playerMarkup = `
             <video id="moviePlayer" controls autoplay playsinline preload="metadata"
                 controlsList="nodownload noplaybackrate noremoteplayback"
@@ -1005,14 +1069,20 @@ function isStreamProxyEnabled() {
     return ENABLE_STREAM_PROXY;
 }
 
+function isImageProxyEnabled() {
+    return ENABLE_IMAGE_PROXY;
+}
+
 module.exports = {
     API_BASE_URL,
+    assertSecurityConfiguration,
     buildClientApiUrl,
     createHttpError,
     buildUpstreamApiUrl,
     checkRateLimit,
     createSignedToken,
     getSecurityLockRetryAfter,
+    isImageProxyEnabled,
     getRequestOrigin,
     isSameOriginRequest,
     isSecurityLockedRequest,

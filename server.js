@@ -4,10 +4,12 @@ const path = require('path');
 
 const {
     API_BASE_URL,
+    assertSecurityConfiguration,
     buildClientApiUrl,
     buildUpstreamApiUrl,
     checkRateLimit,
     getSecurityLockRetryAfter,
+    isImageProxyEnabled,
     isSameOriginRequest,
     isSecurityLockedRequest,
     isStreamProxyEnabled,
@@ -228,6 +230,8 @@ const server = http.createServer(async (req, res) => {
         const pathname = requestUrl.pathname || '/';
         const query = Object.fromEntries(requestUrl.searchParams.entries());
 
+        if (pathname.startsWith('/api/')) assertSecurityConfiguration();
+
         if (pathname === '/api/security-lock') {
             await handleSecurityLock(req, res, query);
             return;
@@ -268,7 +272,7 @@ const server = http.createServer(async (req, res) => {
     } catch (error) {
         console.error('Server error:', error.message);
         if (!res.headersSent) {
-            sendText(res, 500, 'Internal server error');
+            sendText(res, error.statusCode || 500, 'Internal server error');
         } else {
             res.end();
         }
@@ -554,7 +558,7 @@ async function handleStream(req, res, query) {
     }
 
     try {
-        const targetUrl = verifySignedToken(query.t);
+        const targetUrl = verifySignedToken(query.t, 'stream');
         const upstreamHeaders = {
             Accept: '*/*',
             Referer: 'https://ophim1.com/',
@@ -621,6 +625,12 @@ async function handleImage(req, res, query) {
         referrerPolicy: 'no-referrer',
         csp: "default-src 'none'; img-src 'self' data:; frame-ancestors 'none'; object-src 'none'"
     });
+
+    if (!isImageProxyEnabled()) {
+        applyNoStoreHeaders(res);
+        sendText(res, 404, 'Image proxy is disabled');
+        return;
+    }
 
     if (req.method === 'OPTIONS') {
         applyNoStoreHeaders(res);

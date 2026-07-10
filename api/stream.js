@@ -1,4 +1,5 @@
 const {
+    assertSecurityConfiguration,
     checkRateLimit,
     getSecurityLockRetryAfter,
     isStreamProxyEnabled,
@@ -15,6 +16,12 @@ module.exports = async (req, res) => {
         crossOriginResourcePolicy: 'same-origin',
         referrerPolicy: 'no-referrer'
     });
+
+    try {
+        assertSecurityConfiguration();
+    } catch (error) {
+        return res.status(error.statusCode || 503).send('Service temporarily unavailable');
+    }
 
     if (!isStreamProxyEnabled()) {
         res.setHeader('Cache-Control', 'public, max-age=60');
@@ -48,7 +55,7 @@ module.exports = async (req, res) => {
     }
 
     try {
-        const targetUrl = verifySignedToken(req.query.t);
+        const targetUrl = verifySignedToken(req.query.t, 'stream');
         const upstreamHeaders = {
             Accept: '*/*',
             Referer: 'https://ophim1.com/',

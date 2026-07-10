@@ -1,6 +1,8 @@
 const {
+    assertSecurityConfiguration,
     checkRateLimit,
     getSecurityLockRetryAfter,
+    isImageProxyEnabled,
     isSameOriginRequest,
     isSecurityLockedRequest,
     resolveImageTarget,
@@ -25,6 +27,18 @@ module.exports = async (req, res) => {
         referrerPolicy: 'no-referrer',
         csp: "default-src 'none'; img-src 'self' data:; frame-ancestors 'none'; object-src 'none'"
     });
+
+    try {
+        assertSecurityConfiguration();
+    } catch (error) {
+        applyNoStoreHeaders(res);
+        return res.status(error.statusCode || 503).send('Service temporarily unavailable');
+    }
+
+    if (!isImageProxyEnabled()) {
+        applyNoStoreHeaders(res);
+        return res.status(404).send('Image proxy is disabled');
+    }
 
     if (req.method === 'OPTIONS') {
         applyNoStoreHeaders(res);
