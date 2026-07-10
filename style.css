@@ -4077,3 +4077,887 @@ html[data-theme="light"] .deck-title {
         white-space: normal;
     }
 }
+
+/* =========================================================================
+   MOBILE EXPERIENCE HARDENING
+   Keeps the cinema look while making phone layouts stable and thumb-friendly.
+   ========================================================================= */
+@media (max-width: 768px) {
+    html,
+    body {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+
+    body {
+        padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px));
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .container {
+        padding-left: clamp(14px, 4vw, 22px);
+        padding-right: clamp(14px, 4vw, 22px);
+    }
+
+    .navbar,
+    .navbar.scrolled {
+        top: max(10px, env(safe-area-inset-top, 0px));
+        width: calc(100vw - 20px);
+        min-height: 58px;
+        height: auto;
+        border-radius: 18px;
+    }
+
+    .nav-container {
+        min-width: 0;
+        min-height: 58px;
+        gap: 0.75rem;
+        padding: 0 0.75rem !important;
+    }
+
+    .logo {
+        min-width: 0;
+        max-width: 44vw;
+        gap: 0.5rem;
+    }
+
+    .logo-img {
+        width: 38px;
+        height: 38px;
+        border-radius: 10px;
+        flex: 0 0 auto;
+    }
+
+    .logo-text {
+        min-width: 0;
+        gap: 0.25rem;
+    }
+
+    .logo-quan,
+    .logo-chill,
+    .logo span {
+        font-size: clamp(0.92rem, 4.1vw, 1.08rem);
+        line-height: 1;
+    }
+
+    .nav-controls {
+        min-width: 0;
+        flex: 1 1 auto;
+        gap: 0.45rem;
+        margin-left: auto;
+    }
+
+    .search-bar,
+    .search-bar:focus-within {
+        width: 100%;
+        min-width: 0;
+        max-width: none;
+        flex: 1 1 0;
+        height: 40px;
+        min-height: 40px;
+        padding: 0.18rem 0.3rem 0.18rem 0.72rem;
+    }
+
+    .search-bar input {
+        min-width: 0;
+        font-size: 0.88rem;
+        text-overflow: ellipsis;
+    }
+
+    .search-btn {
+        width: 34px;
+        height: 34px;
+        flex: 0 0 34px;
+    }
+
+    .search-icon {
+        flex: 0 0 auto;
+    }
+
+    .theme-toggle-btn,
+    .mobile-menu-btn {
+        width: 40px;
+        height: 40px;
+        flex: 0 0 40px;
+    }
+
+    .main-content {
+        padding-top: 1.35rem;
+        padding-bottom: calc(7.5rem + env(safe-area-inset-bottom, 0px));
+    }
+
+    .inner-main {
+        margin-top: calc(72px + env(safe-area-inset-top, 0px)) !important;
+        padding-top: 0.75rem !important;
+    }
+
+    .filter-header {
+        align-items: center;
+    }
+
+    .page-title {
+        min-width: 0;
+        margin-bottom: 1.1rem;
+        font-size: clamp(1.35rem, 6vw, 1.75rem);
+        line-height: 1.15;
+        overflow-wrap: anywhere;
+    }
+
+    .filter-panel {
+        gap: 0.75rem;
+        padding: 0.9rem;
+    }
+
+    .filter-group select,
+    .filter-actions .btn,
+    .btn {
+        min-height: 44px;
+    }
+
+    .movie-row {
+        gap: 0.85rem;
+        padding: 8px 0 16px;
+    }
+
+    .scroll-row-container {
+        margin-left: 0;
+        margin-right: 0;
+    }
+
+    .scroll-btn {
+        display: none;
+    }
+
+    .movie-card:hover {
+        transform: none;
+        box-shadow: none;
+    }
+
+    .movie-name {
+        font-size: 0.9rem;
+        line-height: 1.25;
+    }
+
+    .movie-meta {
+        font-size: 0.76rem;
+    }
+
+    .footer {
+        padding-bottom: calc(8rem + env(safe-area-inset-bottom, 0px));
+    }
+
+    .bottom-nav {
+        left: 12px;
+        right: 12px;
+        bottom: max(12px, env(safe-area-inset-bottom, 0px));
+        width: auto;
+        transform: none;
+        padding: 0.38rem;
+        border-radius: 22px;
+    }
+
+    .bottom-nav-item {
+        min-height: 58px;
+        border-radius: 17px;
+        gap: 0.2rem;
+        padding: 0 0.25rem;
+    }
+
+    .bottom-nav-item span {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 0.68rem;
+        line-height: 1.05;
+    }
+}
+
+@media (max-width: 640px) {
+    .nav-controls {
+        position: static;
+        right: auto;
+        left: auto;
+        top: auto;
+    }
+
+    .theme-toggle-btn,
+    .mobile-menu-btn {
+        display: none !important;
+    }
+
+    .nav-links,
+    .nav-links.active {
+        display: none !important;
+    }
+
+    .hero-section {
+        height: auto;
+        min-height: clamp(590px, 88svh, 720px);
+        max-height: none;
+        margin-top: 0;
+    }
+
+    .hero-grid-container {
+        min-height: clamp(590px, 88svh, 720px);
+        padding-top: calc(92px + env(safe-area-inset-top, 0px));
+        padding-bottom: 2.1rem;
+        justify-content: flex-end;
+    }
+
+    .hero-content {
+        width: 100%;
+        min-height: 0;
+        max-width: 100%;
+        margin: 0;
+        padding: 0;
+        gap: 0.78rem;
+        justify-content: flex-end;
+        overflow: visible;
+    }
+
+    .hero-badge {
+        max-width: 100%;
+        font-size: 0.72rem;
+        line-height: 1.15;
+        white-space: normal;
+    }
+
+    .hero-title {
+        max-width: 100%;
+        font-size: clamp(2rem, 10vw, 3.1rem);
+        line-height: 1.04;
+        overflow-wrap: anywhere;
+        text-wrap: balance;
+    }
+
+    .hero-desc {
+        max-width: 100%;
+        font-size: 0.96rem;
+        line-height: 1.45;
+        -webkit-line-clamp: 2;
+    }
+
+    .hero-meta,
+    .hero-quick-search {
+        max-width: 100%;
+        gap: 0.45rem;
+    }
+
+    .hero-meta span,
+    .quick-search-chip,
+    .active-filter-chip,
+    .tag {
+        min-height: 34px;
+        max-width: 100%;
+        padding: 0.38rem 0.62rem;
+        font-size: 0.76rem;
+        line-height: 1.15;
+        overflow-wrap: anywhere;
+    }
+
+    .hero-actions {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 52px;
+        width: 100%;
+        max-width: 100%;
+        gap: 0.65rem;
+        margin-top: 0.2rem;
+    }
+
+    .hero-actions .btn {
+        width: 100%;
+        min-width: 0;
+        justify-content: center;
+        min-height: 50px;
+        padding-inline: 1rem;
+    }
+
+    .hero-actions .btn-primary {
+        grid-column: 1 / -1;
+    }
+
+    .hero-fav-btn {
+        width: 52px;
+        height: 52px;
+        align-self: stretch;
+    }
+
+    .home-deck-section {
+        margin-bottom: 2.25rem;
+    }
+
+    .category-grid-deck {
+        gap: 0.75rem;
+    }
+
+    .deck-card {
+        min-height: 112px;
+        aspect-ratio: auto;
+    }
+
+    .movie-grid {
+        gap: 1rem 0.85rem;
+    }
+
+    .filter-header {
+        flex-direction: row;
+        gap: 0.75rem;
+    }
+
+    .filter-header .page-title {
+        margin-bottom: 0;
+    }
+
+    #toggleFilterBtn {
+        flex: 0 0 auto;
+        padding-inline: 0.85rem;
+    }
+
+    .modal-scroll-content,
+    .player-body .modal-scroll-content {
+        padding: 1rem !important;
+        padding-bottom: calc(7.25rem + env(safe-area-inset-bottom, 0px)) !important;
+    }
+
+    .modal-backdrop {
+        height: 100%;
+        min-height: 100%;
+    }
+
+    .modal-header-info {
+        display: grid;
+        grid-template-columns: 92px minmax(0, 1fr);
+        align-items: start;
+        gap: 1rem;
+        padding: 1.25rem !important;
+        text-align: left;
+    }
+
+    .modal-poster {
+        width: 92px;
+        border-radius: 12px;
+    }
+
+    .modal-meta-header,
+    .modal-title-wrapper {
+        min-width: 0;
+        align-items: flex-start;
+    }
+
+    .modal-title {
+        font-size: clamp(1.45rem, 7vw, 2.2rem);
+        line-height: 1.1;
+        overflow-wrap: anywhere;
+    }
+
+    .modal-origin-title {
+        font-size: 0.84rem;
+        line-height: 1.25;
+    }
+
+    .modal-stats {
+        flex-direction: column;
+        gap: 0.45rem;
+    }
+
+    .modal-actions-group {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 0.65rem;
+        margin-top: 1rem;
+    }
+
+    .modal-actions-group .btn {
+        width: 100%;
+        max-width: none;
+    }
+
+    .modal-content-details,
+    .detail-episodes-section {
+        padding: 1.25rem !important;
+    }
+
+    .modal-content-details {
+        display: block;
+        border-top-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .modal-info-list {
+        margin-top: 1.25rem;
+    }
+
+    .player-page-wrapper,
+    .details-page-wrapper,
+    .details-page-body,
+    .player-page-body {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+    }
+
+    .player-body {
+        overflow: visible;
+    }
+
+    .player-movie-info > div {
+        flex-direction: column;
+        align-items: flex-start !important;
+        gap: 0.8rem;
+    }
+
+    .player-movie-info .btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .player-movie-title {
+        font-size: clamp(1.55rem, 8.2vw, 2.35rem) !important;
+        line-height: 1.12;
+        overflow-wrap: anywhere;
+    }
+
+    .player-episode-info {
+        font-size: 0.92rem !important;
+        line-height: 1.35;
+    }
+
+    .video-container {
+        width: 100%;
+        max-width: 100%;
+        border-radius: 14px;
+        box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+    }
+
+    .server-tabs,
+    .episode-range-tabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        padding-bottom: 0.55rem;
+        -webkit-overflow-scrolling: touch;
+        scroll-snap-type: x proximity;
+    }
+
+    .server-tab,
+    .range-tab-btn {
+        flex: 0 0 auto;
+        min-height: 44px;
+        scroll-snap-align: start;
+    }
+
+    .episode-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.7rem;
+        max-height: none;
+        overflow: visible;
+        padding: 2px 0;
+    }
+
+    .episode-btn {
+        min-height: 50px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 15px;
+        padding: 0.55rem 0.35rem;
+        font-size: 0.92rem;
+        line-height: 1.15;
+        overflow-wrap: anywhere;
+    }
+}
+
+@media (max-width: 420px) {
+    .container {
+        padding-left: 14px;
+        padding-right: 14px;
+    }
+
+    .navbar,
+    .navbar.scrolled {
+        width: calc(100vw - 16px);
+        border-radius: 16px;
+    }
+
+    .nav-container {
+        padding: 0 0.55rem !important;
+        gap: 0.55rem;
+    }
+
+    .logo {
+        max-width: 42vw;
+        gap: 0.42rem;
+    }
+
+    .logo-img {
+        width: 34px;
+        height: 34px;
+        border-radius: 9px;
+    }
+
+    .logo-quan,
+    .logo-chill,
+    .logo span {
+        font-size: clamp(0.82rem, 4vw, 0.96rem);
+    }
+
+    .search-bar,
+    .search-bar:focus-within {
+        height: 38px;
+        min-height: 38px;
+        padding-left: 0.58rem;
+    }
+
+    .search-bar input {
+        font-size: 0.82rem;
+        padding-left: 0.35rem;
+    }
+
+    .search-btn {
+        width: 32px;
+        height: 32px;
+        flex-basis: 32px;
+    }
+
+    .hero-section,
+    .hero-grid-container {
+        min-height: clamp(560px, 86svh, 680px);
+    }
+
+    .hero-grid-container {
+        padding-top: calc(84px + env(safe-area-inset-top, 0px));
+    }
+
+    .hero-title {
+        font-size: clamp(1.85rem, 10.3vw, 2.85rem);
+    }
+
+    .hero-actions {
+        grid-template-columns: minmax(0, 1fr) 48px;
+    }
+
+    .hero-fav-btn {
+        width: 48px;
+        height: 48px;
+    }
+
+    .bottom-nav {
+        left: 8px;
+        right: 8px;
+        padding: 0.34rem;
+    }
+
+    .bottom-nav-item {
+        min-height: 56px;
+        border-radius: 16px;
+    }
+
+    .bottom-nav-item span {
+        font-size: 0.64rem;
+    }
+
+    .modal-header-info {
+        grid-template-columns: 82px minmax(0, 1fr);
+        gap: 0.85rem;
+        padding: 1rem !important;
+    }
+
+    .modal-poster {
+        width: 82px;
+    }
+
+    .modal-tags {
+        gap: 0.4rem;
+    }
+
+    .tag {
+        font-size: 0.7rem;
+        padding-inline: 0.5rem;
+    }
+
+    .episode-grid {
+        gap: 0.55rem;
+    }
+
+    .episode-btn {
+        min-height: 48px;
+        border-radius: 14px;
+        font-size: 0.86rem;
+    }
+}
+
+@media (max-width: 340px) {
+    .logo-text {
+        display: none;
+    }
+
+    .logo {
+        max-width: none;
+    }
+
+    .episode-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+/* =========================================================================
+   MOBILE MOVIE DETAIL PAGE REDESIGN
+   Dedicated layout for phim.html so the tapped-movie screen feels intentional.
+   ========================================================================= */
+@media (max-width: 640px) {
+    .details-page-wrapper {
+        margin-top: 0.15rem;
+    }
+
+    .details-page-body.modal-body {
+        height: auto;
+        max-height: none;
+        overflow: visible;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 24px;
+        background:
+            linear-gradient(180deg, rgba(9, 11, 18, 0.72), rgba(9, 11, 18, 0.96) 54%, #07080f 100%),
+            var(--bg-surface);
+        box-shadow:
+            0 24px 60px rgba(0, 0, 0, 0.42),
+            inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    }
+
+    .details-page-body .modal-backdrop {
+        height: 100%;
+        min-height: 100%;
+        opacity: 0.86;
+        filter: saturate(1.05);
+    }
+
+    .details-page-body .modal-backdrop::after {
+        background:
+            linear-gradient(180deg, rgba(7, 8, 15, 0.34) 0%, rgba(7, 8, 15, 0.76) 38%, rgba(7, 8, 15, 0.98) 100%),
+            radial-gradient(circle at 78% 26%, rgba(244, 63, 94, 0.18), transparent 34%),
+            linear-gradient(90deg, rgba(7, 8, 15, 0.82) 0%, rgba(7, 8, 15, 0.42) 52%, rgba(7, 8, 15, 0.86) 100%);
+    }
+
+    .details-page-body .modal-scroll-content {
+        padding: 0 !important;
+        padding-bottom: calc(7.5rem + env(safe-area-inset-bottom, 0px)) !important;
+    }
+
+    .details-page-body .modal-header-info {
+        display: grid;
+        grid-template-columns: 112px minmax(0, 1fr);
+        grid-template-areas:
+            "poster title"
+            "poster tags"
+            "poster stats"
+            "actions actions";
+        gap: 0.72rem 1rem;
+        align-items: start;
+        padding: 1.35rem 1.1rem 1.25rem !important;
+        text-align: left;
+    }
+
+    .details-page-body .modal-poster {
+        grid-area: poster;
+        width: 112px;
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        box-shadow:
+            0 18px 38px rgba(0, 0, 0, 0.5),
+            0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+    }
+
+    .details-page-body .modal-meta-header {
+        display: contents;
+    }
+
+    .details-page-body .modal-title-wrapper {
+        grid-area: title;
+        min-width: 0;
+        display: block;
+    }
+
+    .details-page-body .modal-title {
+        font-size: clamp(1.72rem, 7.6vw, 2.25rem);
+        line-height: 1.04;
+        letter-spacing: 0;
+        text-wrap: balance;
+    }
+
+    .details-page-body .modal-origin-title {
+        margin-top: 0.22rem;
+        color: rgba(243, 244, 246, 0.72);
+        font-size: 0.86rem;
+        line-height: 1.25;
+    }
+
+    .details-page-body .modal-tags {
+        grid-area: tags;
+        gap: 0.42rem;
+        align-content: start;
+    }
+
+    .details-page-body .tag {
+        min-height: 30px;
+        padding: 0.32rem 0.58rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.11);
+        border-color: rgba(255, 255, 255, 0.10);
+        color: rgba(243, 244, 246, 0.76);
+        font-size: 0.72rem;
+        font-weight: 800;
+    }
+
+    .details-page-body .modal-stats {
+        grid-area: stats;
+        display: flex;
+        flex-direction: column;
+        gap: 0.42rem;
+        margin-top: 0.05rem;
+    }
+
+    .details-page-body .stat-item {
+        width: fit-content;
+        max-width: 100%;
+        min-height: 32px;
+        padding: 0.28rem 0.62rem;
+        border: 1px solid rgba(255, 255, 255, 0.10);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.07);
+        color: rgba(243, 244, 246, 0.78);
+        font-size: 0.8rem;
+        line-height: 1.2;
+    }
+
+    .details-page-body .stat-item i,
+    .details-page-body .stat-item svg {
+        width: 16px;
+        height: 16px;
+        color: var(--secondary);
+    }
+
+    .details-page-body .modal-actions-group {
+        grid-area: actions;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 0.68rem;
+        margin-top: 0.7rem;
+    }
+
+    .details-page-body .modal-actions-group .btn {
+        width: 100%;
+        max-width: none;
+        min-height: 52px;
+        border-radius: 16px;
+        font-size: 0.92rem;
+        font-weight: 800;
+        letter-spacing: 0;
+    }
+
+    .details-page-body .modal-actions-group .btn-primary {
+        box-shadow: 0 14px 32px rgba(244, 63, 94, 0.28);
+    }
+
+    .details-page-body .watchlist-toggle-btn {
+        background: rgba(22, 163, 74, 0.10);
+        border-color: rgba(74, 222, 128, 0.46);
+        color: #4ade80;
+        box-shadow: none;
+    }
+
+    .details-page-body .modal-content-details {
+        display: block;
+        margin: 0 1.1rem;
+        padding: 1.25rem 0 0 !important;
+        border-top: 1px solid rgba(255, 255, 255, 0.10);
+    }
+
+    .details-page-body .modal-synopsis {
+        gap: 0.9rem;
+    }
+
+    .details-page-body .modal-synopsis h3,
+    .details-page-body .episode-title {
+        font-size: 1.1rem !important;
+        line-height: 1.2;
+    }
+
+    .details-page-body .modal-synopsis p {
+        color: rgba(243, 244, 246, 0.76);
+        font-size: 0.98rem;
+        line-height: 1.72;
+    }
+
+    .details-page-body .modal-info-list {
+        display: none;
+    }
+
+    .details-page-body .detail-episodes-section {
+        margin: 1.25rem 1.1rem 0 !important;
+        padding: 1.2rem 0 0 !important;
+        border-top: 1px solid rgba(255, 255, 255, 0.10);
+    }
+}
+
+@media (max-width: 420px) {
+    .details-page-body.modal-body {
+        border-radius: 22px;
+    }
+
+    .details-page-body .modal-header-info {
+        grid-template-columns: 96px minmax(0, 1fr);
+        gap: 0.65rem 0.85rem;
+        padding: 1.15rem 1rem 1.1rem !important;
+    }
+
+    .details-page-body .modal-poster {
+        width: 96px;
+        border-radius: 15px;
+    }
+
+    .details-page-body .modal-title {
+        font-size: clamp(1.5rem, 7.4vw, 2rem);
+    }
+
+    .details-page-body .modal-actions-group {
+        margin-top: 0.55rem;
+    }
+
+    .details-page-body .modal-content-details,
+    .details-page-body .detail-episodes-section {
+        margin-left: 1rem !important;
+        margin-right: 1rem !important;
+    }
+}
+
+/* Keep the mobile toolbar aligned with the page container on small screens. */
+@media (max-width: 768px) {
+    .bottom-nav {
+        left: clamp(14px, 4vw, 22px);
+        right: clamp(14px, 4vw, 22px);
+        width: auto;
+        transform: none;
+        overflow: hidden;
+        box-sizing: border-box;
+    }
+
+    .bottom-nav-item.active {
+        max-width: 100%;
+    }
+
+    body:has(.details-page-wrapper) .bottom-nav {
+        left: calc(clamp(14px, 4vw, 22px) + 16px);
+        right: calc(clamp(14px, 4vw, 22px) + 16px);
+    }
+}
+
+@media (max-width: 420px) {
+    .bottom-nav {
+        left: 14px;
+        right: 14px;
+    }
+
+    body:has(.details-page-wrapper) .bottom-nav {
+        left: 30px;
+        right: 30px;
+    }
+}

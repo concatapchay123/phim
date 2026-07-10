@@ -3,7 +3,7 @@ const path = require('path');
 
 const files = ['index.min.html', 'danh-sach.min.html', 'phim.min.html', 'xem-phim.min.html', 'tu-phim.min.html', 'security-locked.min.html'];
 const appVersion = '1.0.18';
-const styleVersion = '1.0.6';
+const styleVersion = '1.0.11';
 
 files.forEach(file => {
     const htmlFile = path.join(__dirname, file);
