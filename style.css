@@ -1095,10 +1095,12 @@ html[data-theme="light"] .filter-group select:hover {
     color: var(--text-muted);
 }
 
-.history-time i {
+.history-time i,
+.history-time svg {
     width: 12px;
     height: 12px;
     flex: 0 0 12px;
+    display: block;
 }
 
 .history-actions-buttons {
