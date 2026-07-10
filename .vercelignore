@@ -1,6 +1,7 @@
 # Source files - do not deploy to production
 app.js
 style.css
+assets/icons.js
 index.html
 danh-sach.html
 phim.html

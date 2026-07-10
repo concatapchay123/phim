@@ -21,6 +21,7 @@ const ROUTE_CLIENT = String.fromCharCode(47, 97, 112, 105, 47, 99);
 const ROUTE_IMAGE = String.fromCharCode(47, 97, 112, 105, 47, 105);
 const ROUTE_PLAYER = String.fromCharCode(47, 97, 112, 105, 47, 112, 108, 97, 121, 101, 114);
 const PLAYER_UPDATE_MESSAGE = 'Phim hiện đang được cập nhật';
+const ENABLE_GSAP = false;
 
 const GENRE_MAP = {
     'hanh-dong': 'Hành Động',
@@ -212,10 +213,32 @@ function escapeHTML(value = '') {
     }[char]));
 }
 
-function getImageUrl(pathValue, fallback = 'assets/logo.png') {
+function getImageUrl(pathValue, fallback = 'assets/logo.png', options = {}) {
     if (!pathValue) return fallback;
-    if (pathValue.startsWith('http') || pathValue.startsWith('/')) return pathValue;
-    return `${ROUTE_IMAGE}?p=${encodeURIComponent(pathValue)}`;
+
+    if (!pathValue.startsWith('http')) {
+        if (pathValue.startsWith('/')) return pathValue;
+        return `${ROUTE_IMAGE}?p=${encodeURIComponent(pathValue)}`;
+    }
+
+    try {
+        const sourceUrl = new URL(pathValue);
+        if (sourceUrl.hostname === 'wsrv.nl') return sourceUrl.toString();
+
+        const width = Math.max(80, Math.min(1920, Number(options.width) || 360));
+        const quality = Math.max(45, Math.min(88, Number(options.quality) || 74));
+        const optimizedUrl = new URL('https://wsrv.nl/');
+        optimizedUrl.searchParams.set('url', sourceUrl.toString());
+        optimizedUrl.searchParams.set('w', String(width));
+        if (options.height) optimizedUrl.searchParams.set('h', String(Math.max(80, Math.min(1920, Number(options.height)))));
+        if (options.fit) optimizedUrl.searchParams.set('fit', options.fit);
+        optimizedUrl.searchParams.set('we', '1');
+        optimizedUrl.searchParams.set('output', 'webp');
+        optimizedUrl.searchParams.set('q', String(quality));
+        return optimizedUrl.toString();
+    } catch (_) {
+        return fallback;
+    }
 }
 
 const API_CACHE_TTL = {
@@ -661,6 +684,11 @@ function createCardSkeletons(count = 12, row = false) {
 function initClientSecurityDeterrents() {
     if (window.__qcSecurityDeterrentsReady) return;
     window.__qcSecurityDeterrentsReady = true;
+
+    // Browser-side DevTools detection is easy to bypass and can misidentify
+    // resized, split-screen or embedded browsers. Security remains enforced by
+    // CSP, same-origin API checks, allowlists and server-side rate limits.
+    return;
 
     const lockStorageKey = 'qc_security_lock_until';
     const lockBroadcastKey = 'qc_security_lock_ping';
@@ -1161,11 +1189,11 @@ initClientSecurityDeterrents();
 
 const introPreloader = {
     sessionKey: 'qc_intro_seen_v1',
-    assetSrc: 'assets/logo-loading.png',
-    minDuration: 1800,
-    maxWait: 5500,
-    reducedMinDuration: 500,
-    reducedMaxWait: 1500,
+    assetSrc: 'https://wsrv.nl/?url=quanchillphim.vercel.app/assets/logo-loading.png&w=358&output=webp&q=80',
+    minDuration: 150,
+    maxWait: 2500,
+    reducedMinDuration: 0,
+    reducedMaxWait: 800,
 
     start(pageReadyPromise, targetUrl) {
         const loader = document.getElementById('qcIntroLoader');
@@ -1184,7 +1212,6 @@ const introPreloader = {
 
         const coreReady = Promise.allSettled([
             this.preloadLogo(),
-            this.waitForFonts(),
             Promise.resolve(pageReadyPromise)
         ]);
 
@@ -1492,17 +1519,17 @@ const libraryManager = {
         elements.historyEmpty.classList.add('hidden');
         
         history.forEach(item => {
-            const thumbUrl = getImageUrl(item.thumb_url, 'assets/logo.png');
+            const thumbUrl = getImageUrl(item.thumb_url, 'assets/logo.png', { width: 160, quality: 70 });
             const timeAgo = formatTimeAgo(item.watchedAt);
             
             const row = document.createElement('div');
             row.className = 'history-item';
             row.innerHTML = `
-                <img src="${thumbUrl}" alt="${escapeHTML(item.name)}" class="history-thumb" loading="lazy" onerror="this.src='assets/logo.png';">
+                <img src="${thumbUrl}" alt="${escapeHTML(item.name)}" class="history-thumb" loading="lazy" decoding="async" onerror="this.src='assets/logo.png';">
                 <div class="history-details">
                     <span class="history-title">${escapeHTML(item.name)}</span>
                     <span class="history-ep">Tập đang xem: ${escapeHTML(item.episodeName)}</span>
-                    <span class="history-time"><i data-lucide="clock" style="width:12px; height:12px; display:inline-block; vertical-align:middle; margin-right:4px;"></i>Xem ${timeAgo}</span>
+                    <span class="history-time"><i data-lucide="clock"></i>Xem ${timeAgo}</span>
                 </div>
                 <div class="history-actions-buttons">
                     <button class="history-btn-play" title="Xem tiếp" aria-label="Xem tiếp ${escapeHTML(item.name)}">
@@ -1582,7 +1609,7 @@ function switchView(viewName) {
     closeMobileMenu();
     
     // Page Transitions using GSAP
-    if (window.gsap && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (ENABLE_GSAP && window.gsap && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
         // Fade out other pages
         pages.forEach(p => {
             if (p !== targetPage && !p.classList.contains('hidden')) {
@@ -1766,15 +1793,16 @@ async function loadHomePage() {
         const cached = getCachedApiData(row.endpoint, row.params, { allowStale: true });
         if (cached) {
             renderRow(cached, row.container);
+            row.container.dataset.homeRowLoaded = '1';
         } else {
             row.container.innerHTML = createCardSkeletons(8, true);
         }
     });
 
-    // Parallel fetch for top 4 categories
-    const [resMoi, resLe, resBo, resChieuRap] = await Promise.all(
-        homeRows.map(row => fetchAPI(row.endpoint, row.params))
-    );
+    const featuredRow = homeRows[0];
+    if (!featuredRow) return;
+    featuredRow.container.dataset.homeRowLoadStarted = '1';
+    const resMoi = await fetchAPI(featuredRow.endpoint, featuredRow.params);
 
     // Setup Featured Movie Hero & Switcher Carousel
     if (resMoi && resMoi.data && resMoi.data.items && resMoi.data.items.length > 0) {
@@ -1782,13 +1810,39 @@ async function loadHomePage() {
         setupHeroSwitcher(featuredMovies);
     }
 
-    // Render rows
     renderRow(resMoi, elements.rowPhimMoi);
-    renderRow(resLe, elements.rowPhimLe);
-    renderRow(resBo, elements.rowPhimBo);
-    if (elements.rowPhimChieuRap) {
-        renderRow(resChieuRap, elements.rowPhimChieuRap);
+    featuredRow.container.dataset.homeRowLoaded = '1';
+
+    const deferredRows = homeRows.slice(1).filter(row => row.container.dataset.homeRowLoaded !== '1');
+    if (!deferredRows.length) return;
+
+    const loadDeferredRow = async row => {
+        if (row.container.dataset.homeRowLoadStarted === '1') return;
+        row.container.dataset.homeRowLoadStarted = '1';
+        const response = await fetchAPI(row.endpoint, row.params);
+        renderRow(response, row.container);
+        row.container.dataset.homeRowLoaded = '1';
+    };
+
+    if (!('IntersectionObserver' in window)) {
+        deferredRows.forEach(loadDeferredRow);
+        return;
     }
+
+    const observer = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+            if (!entry.isIntersecting) return;
+            const row = deferredRows.find(item => item.container.closest('.home-row-section') === entry.target);
+            if (row) loadDeferredRow(row);
+            observer.unobserve(entry.target);
+        });
+    }, { rootMargin: '500px 0px' });
+
+    deferredRows.forEach(row => {
+        const section = row.container.closest('.home-row-section');
+        if (section) observer.observe(section);
+        else loadDeferredRow(row);
+    });
 }
 
 function renderRow(response, container) {
@@ -1816,7 +1870,7 @@ function renderRow(response, container) {
  */
 function createMovieCardHTML(movie) {
     const imgSource = (movie.poster_url && movie.poster_url !== '') ? movie.poster_url : movie.thumb_url;
-    const finalImgUrl = getImageUrl(imgSource);
+    const finalImgUrl = getImageUrl(imgSource, 'assets/logo.png', { width: 360, quality: 72 });
     const year = movie.year || 'N/A';
     const quality = movie.quality || 'HD';
     const lang = movie.lang || 'Vietsub';
@@ -1833,7 +1887,7 @@ function createMovieCardHTML(movie) {
         <div class="movie-poster-container">
             <span class="movie-quality">${escapeHTML(quality)}</span>
             <span class="movie-lang">${escapeHTML(lang)}</span>
-            <img src="${finalImgUrl}" alt="${movieName}" class="movie-poster" loading="lazy" onerror="this.src='assets/logo.png';">
+            <img src="${finalImgUrl}" alt="${movieName}" class="movie-poster" loading="lazy" decoding="async" fetchpriority="low" onerror="this.src='assets/logo.png';">
             
             <div class="movie-overlay">
                 <button class="play-btn-circle" type="button" aria-label="Mở chi tiết phim">
@@ -1931,31 +1985,32 @@ function changeHeroBackground(newImageUrl) {
     // Set next background image
     bgNext.style.backgroundImage = newBgStyle;
     
-    // Animate next opacity to 1, and scale it slightly to feel premium
-    if (window.gsap && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-        gsap.killTweensOf(bgNext);
-        gsap.killTweensOf(bgCurrent);
-        
-        gsap.fromTo(bgNext, 
-            { opacity: 0, scale: 1.03 },
-            { 
-                opacity: 1, 
-                scale: 1, 
-                duration: 1.0, 
-                ease: "power2.out",
-                onComplete: () => {
-                    bgCurrent.style.backgroundImage = newBgStyle;
-                    bgCurrent.style.opacity = '1';
-                    bgNext.style.opacity = '0';
-                }
-            }
-        );
-        
-        gsap.to(bgCurrent, {
-            opacity: 0.2,
-            duration: 0.8,
-            ease: "power2.out"
+    // Use the browser's native compositor instead of shipping a full animation library.
+    if (bgNext.animate && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        bgNext.getAnimations().forEach(animation => animation.cancel());
+        bgCurrent.getAnimations().forEach(animation => animation.cancel());
+
+        const reveal = bgNext.animate([
+            { opacity: 0, transform: 'scale(1.03)' },
+            { opacity: 1, transform: 'scale(1)' }
+        ], {
+            duration: 800,
+            easing: 'cubic-bezier(.22,.61,.36,1)'
         });
+
+        bgCurrent.animate([
+            { opacity: 1 },
+            { opacity: 0.2 }
+        ], {
+            duration: 650,
+            easing: 'ease-out'
+        });
+
+        reveal.onfinish = () => {
+            bgCurrent.style.backgroundImage = newBgStyle;
+            bgCurrent.style.opacity = '1';
+            bgNext.style.opacity = '0';
+        };
     } else {
         bgCurrent.style.backgroundImage = newBgStyle;
         bgNext.style.opacity = '0';
@@ -1967,8 +2022,8 @@ function changeHeroBackground(newImageUrl) {
  */
 function setupHeroSection(movie) {
     // Background image set to poster/backdrop if exists
-    const posterUrl = getImageUrl(movie.poster_url);
-    const thumbUrl = getImageUrl(movie.thumb_url);
+    const posterUrl = getImageUrl(movie.poster_url, 'assets/logo.png', { width: 1280, quality: 76 });
+    const thumbUrl = getImageUrl(movie.thumb_url, 'assets/logo.png', { width: 1280, quality: 76 });
     const backdrop = movie.thumb_url ? thumbUrl : posterUrl;
     
     changeHeroBackground(backdrop);
@@ -2062,32 +2117,23 @@ function setupHeroSection(movie) {
 async function loadFiltersData() {
     if (elements.filterGenre.options.length > 1) return;
 
-    const [resGenres, resCountries] = await Promise.all([
-        fetchAPI(OP_GENRES),
-        fetchAPI(OP_COUNTRIES)
-    ]);
-
     elements.filterGenre.innerHTML = '<option value="">Tất cả thể loại</option>';
     elements.filterCountry.innerHTML = '<option value="">Tất cả quốc gia</option>';
     elements.filterYear.innerHTML = '<option value="">Tất cả năm</option>';
 
-    if (resGenres && resGenres.data && resGenres.data.items) {
-        resGenres.data.items.forEach(g => {
-            const opt = document.createElement('option');
-            opt.value = g.slug;
-            opt.textContent = g.name;
-            elements.filterGenre.appendChild(opt);
-        });
-    }
+    Object.entries(GENRE_MAP).forEach(([slug, name]) => {
+        const opt = document.createElement('option');
+        opt.value = slug;
+        opt.textContent = name;
+        elements.filterGenre.appendChild(opt);
+    });
 
-    if (resCountries && resCountries.data && resCountries.data.items) {
-        resCountries.data.items.forEach(c => {
-            const opt = document.createElement('option');
-            opt.value = c.slug;
-            opt.textContent = c.name;
-            elements.filterCountry.appendChild(opt);
-        });
-    }
+    Object.entries(COUNTRY_MAP).forEach(([slug, name]) => {
+        const opt = document.createElement('option');
+        opt.value = slug;
+        opt.textContent = name;
+        elements.filterCountry.appendChild(opt);
+    });
 
     const currentYear = new Date().getFullYear();
     for (let yr = currentYear; yr >= 2010; yr--) {
@@ -2345,9 +2391,9 @@ async function fetchMovieDetails(slug) {
 }
 
 function renderMovieDetails(movie, tmdbBackdrop = null, tmdbPoster = null) {
-    const posterUrl = tmdbPoster || getImageUrl(movie.poster_url);
-    const thumbUrl = tmdbBackdrop || getImageUrl(movie.thumb_url || movie.poster_url);
-    const backdropImg = tmdbBackdrop || (movie.thumb_url ? getImageUrl(movie.thumb_url) : posterUrl);
+    const posterUrl = getImageUrl(tmdbPoster || movie.poster_url, 'assets/logo.png', { width: 480, quality: 76 });
+    const thumbUrl = getImageUrl(tmdbBackdrop || movie.thumb_url || movie.poster_url, 'assets/logo.png', { width: 1280, quality: 76 });
+    const backdropImg = getImageUrl(tmdbBackdrop || movie.thumb_url || movie.poster_url, posterUrl, { width: 1280, quality: 76 });
 
     const genres = movie.category ? movie.category.map(c => c.name).join(', ') : 'N/A';
     const countries = movie.country ? movie.country.map(c => c.name).join(', ') : 'N/A';
@@ -2366,7 +2412,7 @@ function renderMovieDetails(movie, tmdbBackdrop = null, tmdbPoster = null) {
         <div class="modal-backdrop" style="background-image: url('${backdropImg}')"></div>
         <div class="modal-scroll-content">
             <div class="modal-header-info">
-                <img src="${posterUrl}" alt="${escapeHTML(movie.name)}" class="modal-poster" onerror="this.src='assets/logo.png';">
+                <img src="${posterUrl}" alt="${escapeHTML(movie.name)}" class="modal-poster" decoding="async" onerror="this.src='assets/logo.png';">
                 
                 <div class="modal-meta-header">
                     <div class="modal-title-wrapper">
@@ -2461,7 +2507,7 @@ function renderMovieDetails(movie, tmdbBackdrop = null, tmdbPoster = null) {
     });
 
     // GSAP Details Modal Entrance
-    if (window.gsap && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (ENABLE_GSAP && window.gsap && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
         const dialog = elements.movieModal.querySelector('.modal-dialog');
         const poster = elements.movieModal.querySelector('.modal-poster');
         const headerInfo = elements.movieModal.querySelector('.modal-meta-header');
@@ -2495,7 +2541,7 @@ function renderMovieDetails(movie, tmdbBackdrop = null, tmdbPoster = null) {
 }
 
 function closeModal() {
-    if (window.gsap && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (ENABLE_GSAP && window.gsap && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
         const dialog = elements.movieModal.querySelector('.modal-dialog');
         gsap.killTweensOf(dialog);
         gsap.to(dialog, {
@@ -2623,7 +2669,7 @@ async function playMovie(movie, episodeIndex = 0, serverIndex = 0) {
     bindPlayerFrameLoader(elements.playerBody);
     
     // GSAP Player Entrance
-    if (window.gsap && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (ENABLE_GSAP && window.gsap && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
         const dialog = elements.playerModal.querySelector('.modal-dialog');
         gsap.fromTo(dialog, 
             { scale: 0.95, y: 20 },
@@ -2646,7 +2692,7 @@ window.changeEpisode = async (slug, epIndex, svIndex = 0) => {
 };
 
 function closePlayerModal() {
-    if (window.gsap && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (ENABLE_GSAP && window.gsap && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
         const dialog = elements.playerModal.querySelector('.modal-dialog');
         gsap.to(dialog, {
             scale: 0.95,
@@ -2973,7 +3019,7 @@ function formatTimeAgo(timestamp) {
 // GSAP ANIMATIONS INITS
 // =========================================================================
 function initGSAPAnimations() {
-    if (!window.gsap) return;
+    if (!ENABLE_GSAP || !window.gsap) return;
     
     // Register ScrollTrigger
     if (window.ScrollTrigger) {
@@ -2998,38 +3044,27 @@ function initGSAPAnimations() {
 async function populateNavDropdowns() {
     if (!elements.dropdownTheLoai || !elements.dropdownQuocGia) return;
 
-    const [resGenres, resCountries] = await Promise.all([
-        fetchAPI(OP_GENRES),
-        fetchAPI(OP_COUNTRIES)
-    ]);
+    elements.dropdownTheLoai.innerHTML = Object.entries(GENRE_MAP).map(([slug, name]) => `
+        <a href="danh-sach.html?type=the-loai&keyword=${escapeHTML(slug)}" data-slug="${escapeHTML(slug)}" class="dropdown-genre-link">${escapeHTML(name)}</a>
+    `).join('');
 
-    if (resGenres && resGenres.data && resGenres.data.items) {
-        elements.dropdownTheLoai.innerHTML = resGenres.data.items.map(g => `
-            <a href="danh-sach.html?type=the-loai&keyword=${escapeHTML(g.slug)}" data-slug="${escapeHTML(g.slug)}" class="dropdown-genre-link">${escapeHTML(g.name)}</a>
-        `).join('');
-        
-        elements.dropdownTheLoai.querySelectorAll('.dropdown-genre-link').forEach(link => {
-            link.addEventListener('click', (e) => {
-                e.preventDefault();
-                const slug = link.getAttribute('data-slug');
-                navigateToPage(`danh-sach.html?type=the-loai&keyword=${slug}`);
-            });
+    elements.dropdownQuocGia.innerHTML = Object.entries(COUNTRY_MAP).map(([slug, name]) => `
+        <a href="danh-sach.html?type=quoc-gia&keyword=${escapeHTML(slug)}" data-slug="${escapeHTML(slug)}" class="dropdown-country-link">${escapeHTML(name)}</a>
+    `).join('');
+
+    elements.dropdownTheLoai.querySelectorAll('.dropdown-genre-link').forEach(link => {
+        link.addEventListener('click', (event) => {
+            event.preventDefault();
+            navigateToPage(`danh-sach.html?type=the-loai&keyword=${link.dataset.slug}`);
         });
-    }
+    });
 
-    if (resCountries && resCountries.data && resCountries.data.items) {
-        elements.dropdownQuocGia.innerHTML = resCountries.data.items.map(c => `
-            <a href="danh-sach.html?type=quoc-gia&keyword=${escapeHTML(c.slug)}" data-slug="${escapeHTML(c.slug)}" class="dropdown-country-link">${escapeHTML(c.name)}</a>
-        `).join('');
-
-        elements.dropdownQuocGia.querySelectorAll('.dropdown-country-link').forEach(link => {
-            link.addEventListener('click', (e) => {
-                e.preventDefault();
-                const slug = link.getAttribute('data-slug');
-                navigateToPage(`danh-sach.html?type=quoc-gia&keyword=${slug}`);
-            });
+    elements.dropdownQuocGia.querySelectorAll('.dropdown-country-link').forEach(link => {
+        link.addEventListener('click', (event) => {
+            event.preventDefault();
+            navigateToPage(`danh-sach.html?type=quoc-gia&keyword=${link.dataset.slug}`);
         });
-    }
+    });
 }
 
 /**
@@ -3084,7 +3119,7 @@ function setupHeroSwitcher(movies) {
 
     elements.heroThumbs.innerHTML = '';
     movies.forEach((movie, index) => {
-        const thumbUrl = getImageUrl(movie.thumb_url || movie.poster_url);
+        const thumbUrl = getImageUrl(movie.thumb_url || movie.poster_url, 'assets/logo.png', { width: 240, quality: 70 });
         const year = movie.year || 'N/A';
         const quality = movie.quality || 'HD';
         const name = escapeHTML(movie.name);
@@ -3092,7 +3127,7 @@ function setupHeroSwitcher(movies) {
         const item = document.createElement('div');
         item.className = `hero-thumb-item`;
         item.innerHTML = `
-            <img src="${thumbUrl}" alt="${name}" class="hero-thumb-img" onerror="this.src='assets/logo.png';">
+            <img src="${thumbUrl}" alt="${name}" class="hero-thumb-img" loading="lazy" decoding="async" onerror="this.src='assets/logo.png';">
             <div class="hero-thumb-info">
                 <span class="hero-thumb-title" title="${name}">${name}</span>
                 <span class="hero-thumb-meta">${escapeHTML(year)} &bull; <span class="badge-quality">${escapeHTML(quality)}</span></span>
@@ -3258,9 +3293,9 @@ function renderMovieDetailsPage(movie, tmdbBackdrop = null, tmdbPoster = null) {
     const lastEp = movieHistory ? movieHistory.episodeIndex : 0;
     const lastSv = movieHistory ? movieHistory.serverIndex : 0;
 
-    const posterUrl = tmdbPoster || getImageUrl(movie.poster_url);
-    const thumbUrl = tmdbBackdrop || getImageUrl(movie.thumb_url || movie.poster_url);
-    const backdropImg = tmdbBackdrop || (movie.thumb_url ? getImageUrl(movie.thumb_url) : posterUrl);
+    const posterUrl = getImageUrl(tmdbPoster || movie.poster_url, 'assets/logo.png', { width: 480, quality: 76 });
+    const thumbUrl = getImageUrl(tmdbBackdrop || movie.thumb_url || movie.poster_url, 'assets/logo.png', { width: 1280, quality: 76 });
+    const backdropImg = getImageUrl(tmdbBackdrop || movie.thumb_url || movie.poster_url, posterUrl, { width: 1280, quality: 76 });
 
     const genres = movie.category ? movie.category.map(c => c.name).join(', ') : 'N/A';
     const countries = movie.country ? movie.country.map(c => c.name).join(', ') : 'N/A';
@@ -3313,7 +3348,7 @@ function renderMovieDetailsPage(movie, tmdbBackdrop = null, tmdbPoster = null) {
         <div class="modal-backdrop" style="background-image: url('${backdropImg}')"></div>
         <div class="modal-scroll-content">
             <div class="modal-header-info">
-                <img src="${posterUrl}" alt="${escapeHTML(movie.name)}" class="modal-poster" onerror="this.src='assets/logo.png';">
+                <img src="${posterUrl}" alt="${escapeHTML(movie.name)}" class="modal-poster" decoding="async" onerror="this.src='assets/logo.png';">
                 
                 <div class="modal-meta-header">
                     <div class="modal-title-wrapper">
@@ -3463,8 +3498,8 @@ async function renderMoviePlayerPage(movie, episodeIndex = 0, serverIndex = 0, t
     // Save to Watch History
     if (playerUrl) libraryManager.addToHistory(movie, epName, episodeIndex, serverIndex);
 
-    const posterUrl = getImageUrl(movie.poster_url);
-    const backdropImg = tmdbBackdrop || (movie.thumb_url ? getImageUrl(movie.thumb_url) : posterUrl);
+    const posterUrl = getImageUrl(movie.poster_url, 'assets/logo.png', { width: 480, quality: 76 });
+    const backdropImg = getImageUrl(tmdbBackdrop || movie.thumb_url || movie.poster_url, posterUrl, { width: 1280, quality: 76 });
 
     let html = `
         <div class="modal-backdrop" style="background-image: url('${backdropImg}')"></div>
@@ -4076,7 +4111,7 @@ async function navigateToPage(urlStr, push = true) {
             document.documentElement.style.scrollBehavior = prevScrollBehavior;
         };
 
-        if (window.gsap && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        if (ENABLE_GSAP && window.gsap && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
             gsap.to(mainEl, {
                 opacity: 0,
                 y: -15,

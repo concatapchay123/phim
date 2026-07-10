@@ -2,8 +2,9 @@ const fs = require('fs');
 const path = require('path');
 
 const files = ['index.min.html', 'danh-sach.min.html', 'phim.min.html', 'xem-phim.min.html', 'tu-phim.min.html', 'security-locked.min.html'];
-const appVersion = '1.0.22';
-const styleVersion = '1.0.17';
+const appVersion = '1.1.0';
+const styleVersion = '1.0.18';
+const iconVersion = '1.0.0';
 
 files.forEach(file => {
     const htmlFile = path.join(__dirname, file);
@@ -19,6 +20,8 @@ files.forEach(file => {
     content = content.replace(/'style(?:\.min)?\.css(?:\?v=[^']*)?'/g, `'style.min.css?v=${styleVersion}'`);
     content = content.replace(/"app(?:\.min)?\.js(?:\?v=[^"]*)?"/g, `"app.min.js?v=${appVersion}"`);
     content = content.replace(/'app(?:\.min)?\.js(?:\?v=[^']*)?'/g, `'app.min.js?v=${appVersion}'`);
+    content = content.replace(/"assets\/icons(?:\.min)?\.js(?:\?v=[^"]*)?"/g, `"assets/icons.min.js?v=${iconVersion}"`);
+    content = content.replace(/'assets\/icons(?:\.min)?\.js(?:\?v=[^']*)?'/g, `'assets/icons.min.js?v=${iconVersion}'`);
     
     // Convert links to clean URLs for production Vercel deployment
     content = content.replace(/index\.html/g, '/');

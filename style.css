@@ -1088,8 +1088,17 @@ html[data-theme="light"] .filter-group select:hover {
 }
 
 .history-time {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     font-size: 0.75rem;
     color: var(--text-muted);
+}
+
+.history-time i {
+    width: 12px;
+    height: 12px;
+    flex: 0 0 12px;
 }
 
 .history-actions-buttons {
@@ -6338,5 +6347,18 @@ html[data-theme="light"] .nav-links .nav-link:hover {
     .bottom-nav {
         width: calc(100vw - 20px);
         max-width: calc(100vw - 20px);
+    }
+}
+
+/* Skip paint/layout work for film rows that are still far below the viewport. */
+@supports (content-visibility: auto) {
+    .home-row-section {
+        content-visibility: auto;
+        contain-intrinsic-size: auto 440px;
+    }
+
+    .footer {
+        content-visibility: auto;
+        contain-intrinsic-size: auto 420px;
     }
 }
