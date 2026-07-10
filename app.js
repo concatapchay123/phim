@@ -5,7 +5,9 @@
 // =========================================================================
 // CONFIGURATION & CONSTANTS
 // =========================================================================
-const API_CACHE_PREFIX = 'qc_cache_v6_';
+// Bump this whenever the shape or validity period of API data changes.  It
+// prevents stale localStorage entries from keeping expired signed image URLs.
+const API_CACHE_PREFIX = 'qc_cache_v7_';
 const OP_HOME = 'a';
 const OP_PHIM_BO = 'b';
 const OP_PHIM_LE = 'c';

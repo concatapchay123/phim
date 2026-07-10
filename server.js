@@ -1,7 +1,6 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const url = require('url');
 
 const {
     API_BASE_URL,
@@ -225,42 +224,43 @@ const PLAYER_CSP = [
 
 const server = http.createServer(async (req, res) => {
     try {
-        const parsedUrl = url.parse(req.url, true);
-        let pathname = parsedUrl.pathname || '/';
+        const requestUrl = new URL(req.url || '/', 'http://localhost');
+        const pathname = requestUrl.pathname || '/';
+        const query = Object.fromEntries(requestUrl.searchParams.entries());
 
         if (pathname === '/api/security-lock') {
-            await handleSecurityLock(req, res, parsedUrl.query);
+            await handleSecurityLock(req, res, query);
             return;
         }
 
         if (pathname === '/api/c') {
-            await handleClientApi(req, res, parsedUrl.query);
+            await handleClientApi(req, res, query);
             return;
         }
 
         if (pathname === '/api/proxy') {
-            await handleApiProxy(req, res, parsedUrl.query.url, parsedUrl.query, 'proxy');
+            await handleApiProxy(req, res, query.url, query, 'proxy');
             return;
         }
 
         if (pathname === '/api/player') {
-            await handlePlayer(req, res, parsedUrl.query);
+            await handlePlayer(req, res, query);
             return;
         }
 
         if (pathname === '/api/stream') {
-            await handleStream(req, res, parsedUrl.query);
+            await handleStream(req, res, query);
             return;
         }
 
         if (pathname === '/api/i') {
-            await handleImage(req, res, parsedUrl.query);
+            await handleImage(req, res, query);
             return;
         }
 
         if (pathname.startsWith('/api/')) {
             const upstreamPath = pathname.replace(/^\/api/, '');
-            await handleApiProxy(req, res, upstreamPath, parsedUrl.query, 'api');
+            await handleApiProxy(req, res, upstreamPath, query, 'api');
             return;
         }
 

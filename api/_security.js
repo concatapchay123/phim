@@ -6,7 +6,10 @@ const CDN_IMAGE_BASE_URL = (process.env.CDN_IMAGE_BASE_URL || 'https://img.ophim
 const PLAYER_TOKEN_SECRET = process.env.PLAYER_TOKEN_SECRET || process.env.JWT_SECRET || 'quanchill-local-player-secret-change-me';
 const PLAYER_TOKEN_TTL_SECONDS = Math.max(30, Number(process.env.PLAYER_TOKEN_TTL_SECONDS || 300));
 const HLS_VALIDATION_TIMEOUT_MS = Math.max(800, Number(process.env.HLS_VALIDATION_TIMEOUT_MS || 2200));
-const IMAGE_TOKEN_TTL_SECONDS = Math.max(300, Number(process.env.IMAGE_TOKEN_TTL_SECONDS || 1209600));
+// API responses may be kept in the browser cache for up to 15 days.  Keep image
+// links valid longer than that window so a cached catalogue never contains
+// already-expired image URLs.
+const IMAGE_TOKEN_TTL_SECONDS = Math.max(2592000, Number(process.env.IMAGE_TOKEN_TTL_SECONDS || 2592000));
 const ENABLE_STREAM_PROXY = process.env.ENABLE_STREAM_PROXY === 'true' && process.env.ALLOW_HIGH_BANDWIDTH_STREAM_PROXY === 'true';
 const ENABLE_IMAGE_PROXY = process.env.ENABLE_IMAGE_PROXY === 'true' && process.env.ALLOW_HIGH_BANDWIDTH_IMAGE_PROXY === 'true';
 const SECURITY_LOCK_SECRET = process.env.SECURITY_LOCK_SECRET || PLAYER_TOKEN_SECRET;
@@ -471,7 +474,7 @@ function createSignedToken(url, ttlSeconds = PLAYER_TOKEN_TTL_SECONDS) {
 function verifySignedToken(token) {
     const [ivPart, encryptedPart, tagPart] = String(token || '').split('.');
     if (!ivPart || !encryptedPart || !tagPart) {
-        throw createHttpError('Missing stream token', 401);
+        throw createHttpError('Missing signed token', 401);
     }
 
     let data;
@@ -488,7 +491,7 @@ function verifySignedToken(token) {
         ]);
         data = JSON.parse(decrypted.toString('utf8'));
     } catch (error) {
-        throw createHttpError('Invalid stream token', 401);
+        throw createHttpError('Invalid signed token', 401);
     }
 
     if (!data.u || !/^https?:\/\//i.test(data.u)) {
@@ -496,7 +499,7 @@ function verifySignedToken(token) {
     }
 
     if (!data.exp || Date.now() > data.exp) {
-        throw createHttpError('Expired stream token', 401);
+        throw createHttpError('Expired signed token', 401);
     }
 
     return data.u;
