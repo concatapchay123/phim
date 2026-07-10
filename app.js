@@ -1338,8 +1338,23 @@ const themeManager = {
         });
     },
     setTheme(theme) {
-        document.documentElement.setAttribute('data-theme', theme);
-        localStorage.setItem('theme', theme);
+        const normalizedTheme = theme === 'light' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', normalizedTheme);
+        localStorage.setItem('theme', normalizedTheme);
+
+        // Keep browser chrome and assistive technology in sync with the
+        // selected theme instead of leaving the dark-mode metadata behind.
+        const themeColor = document.querySelector('meta[name="theme-color"]');
+        if (themeColor) {
+            themeColor.setAttribute('content', normalizedTheme === 'light' ? '#f4f0e8' : '#0a0c14');
+        }
+
+        if (elements.themeToggle) {
+            const isLight = normalizedTheme === 'light';
+            elements.themeToggle.setAttribute('aria-pressed', String(isLight));
+            elements.themeToggle.setAttribute('title', isLight ? 'Chuyển sang giao diện tối' : 'Chuyển sang giao diện sáng');
+            elements.themeToggle.setAttribute('aria-label', isLight ? 'Chuyển sang giao diện tối' : 'Chuyển sang giao diện sáng');
+        }
     }
 };
 
@@ -1720,6 +1735,12 @@ function syncBottomNavigation() {
 function closeMobileMenu() {
     if (!elements.navLinks) return;
     elements.navLinks.classList.remove('active');
+    elements.navLinks.querySelectorAll('.mobile-submenu-open').forEach(wrapper => {
+        wrapper.classList.remove('mobile-submenu-open');
+    });
+    elements.navLinks.querySelectorAll('[aria-expanded="true"]').forEach(toggle => {
+        toggle.setAttribute('aria-expanded', 'false');
+    });
     if (elements.menuIconOpen && elements.menuIconClose) {
         elements.menuIconOpen.classList.remove('hidden');
         elements.menuIconClose.classList.add('hidden');
@@ -2724,6 +2745,7 @@ function initStaticEventListeners() {
 
     elements.mobileMenuBtn.addEventListener('click', () => {
         const isOpen = elements.navLinks.classList.toggle('active');
+        elements.mobileMenuBtn.setAttribute('aria-expanded', String(isOpen));
         if (isOpen) {
             elements.menuIconOpen.classList.add('hidden');
             elements.menuIconClose.classList.remove('hidden');
@@ -2731,6 +2753,25 @@ function initStaticEventListeners() {
             elements.menuIconOpen.classList.remove('hidden');
             elements.menuIconClose.classList.add('hidden');
         }
+    });
+
+    [elements.navTheLoai, elements.navQuocGia].forEach(toggle => {
+        if (!toggle) return;
+        toggle.setAttribute('aria-expanded', 'false');
+        toggle.addEventListener('click', event => {
+            if (!window.matchMedia('(max-width: 1280px)').matches) return;
+            event.preventDefault();
+            const wrapper = toggle.closest('.nav-dropdown-wrapper');
+            if (!wrapper) return;
+            elements.navLinks.querySelectorAll('.mobile-submenu-open').forEach(otherWrapper => {
+                if (otherWrapper === wrapper) return;
+                otherWrapper.classList.remove('mobile-submenu-open');
+                const otherToggle = otherWrapper.querySelector(':scope > .nav-link');
+                otherToggle?.setAttribute('aria-expanded', 'false');
+            });
+            const isOpen = wrapper.classList.toggle('mobile-submenu-open');
+            toggle.setAttribute('aria-expanded', String(isOpen));
+        });
     });
 
     const executeSearch = () => {
