@@ -458,6 +458,73 @@ function createPlayerUrl(slug, episodeIndex = 0, serverIndex = 0) {
     return `${playerUrl.pathname}${playerUrl.search}`;
 }
 
+// The player iframe is same-origin, so it can store the precise timestamp
+// locally.  Keep the episode/server selection in the main app as well, so a
+// generic "Xem phim" button can resume a series instead of always opening
+// episode 1.
+function toPlaybackIndex(value, fallback = 0) {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function getWatchProgress(slug) {
+    if (!slug) return null;
+
+    try {
+        const saved = JSON.parse(localStorage.getItem(`watchProgress_${slug}`));
+        if (!saved || typeof saved !== 'object') return null;
+
+        const time = Number(saved.time);
+        if (!Number.isFinite(time) || time <= 0) return null;
+
+        return {
+            episodeIndex: toPlaybackIndex(saved.ep),
+            serverIndex: toPlaybackIndex(saved.sv),
+            time
+        };
+    } catch (error) {
+        return null;
+    }
+}
+
+function getResumePlayback(slug, fallbackEpisode = 0, fallbackServer = 0) {
+    const progress = getWatchProgress(slug);
+    if (progress) return progress;
+
+    // Older sessions only have watchHistory.  It still contains enough data
+    // to restore the correct episode and server, even without a timestamp.
+    try {
+        const history = JSON.parse(localStorage.getItem('watchHistory')) || [];
+        const item = history.find(entry => entry && entry.slug === slug);
+        if (item) {
+            return {
+                episodeIndex: toPlaybackIndex(item.episodeIndex, fallbackEpisode),
+                serverIndex: toPlaybackIndex(item.serverIndex, fallbackServer),
+                time: 0
+            };
+        }
+    } catch (error) {
+        // A corrupted history entry must not prevent playback.
+    }
+
+    return {
+        episodeIndex: toPlaybackIndex(fallbackEpisode),
+        serverIndex: toPlaybackIndex(fallbackServer),
+        time: 0
+    };
+}
+
+function createWatchPageUrl(slug, episodeIndex = null, serverIndex = null) {
+    const playback = episodeIndex === null || serverIndex === null
+        ? getResumePlayback(slug, episodeIndex ?? 0, serverIndex ?? 0)
+        : {
+            episodeIndex: toPlaybackIndex(episodeIndex),
+            serverIndex: toPlaybackIndex(serverIndex)
+        };
+
+    return `xem-phim.html?slug=${encodeURIComponent(slug)}&ep=${playback.episodeIndex}&sv=${playback.serverIndex}`;
+}
+
 function getEpisodeText(value = '') {
     return String(value || '').trim();
 }
@@ -2051,7 +2118,7 @@ function setupHeroSection(movie) {
     elements.heroBtnPlay.onclick = (e) => {
         e.stopPropagation();
         warmMovieIntent(movie, { immediate: true });
-        navigateToPage(`xem-phim.html?slug=${movie.slug}&ep=0`);
+        navigateToPage(createWatchPageUrl(movie.slug));
     };
     if (shouldUsePassiveIntentPrefetch()) {
         elements.heroBtnPlay.onmouseenter = () => {
@@ -2506,7 +2573,8 @@ function renderMovieDetails(movie, tmdbBackdrop = null, tmdbPoster = null) {
     const modalWatchBtn = document.getElementById('modalWatchBtn');
     modalWatchBtn.addEventListener('click', () => {
         closeModal();
-        playMovie(movie, 0, 0);
+        const playback = getResumePlayback(movie.slug);
+        playMovie(movie, playback.episodeIndex, playback.serverIndex);
     });
 
     // GSAP Details Modal Entrance
@@ -3380,7 +3448,7 @@ function renderMovieDetailsPage(movie, tmdbBackdrop = null, tmdbPoster = null) {
                     </div>
 
                     <div class="modal-actions-group">
-                        <a href="xem-phim.html?slug=${movie.slug}&ep=${lastEp}&sv=${lastSv}" class="btn btn-primary" style="text-decoration: none;">
+                        <a href="${createWatchPageUrl(movie.slug, lastEp, lastSv)}" class="btn btn-primary" style="text-decoration: none;">
                             <i data-lucide="play"></i> XEM PHIM
                         </a>
                         <button class="${watchBtnClass} btn" id="watchlistToggleBtn">
@@ -4285,8 +4353,17 @@ function runPageRouting(url) {
     } else if (isWatchPage) {
         const urlParams = url.searchParams;
         const slug = urlParams.get('slug');
-        const epIndex = parseInt(urlParams.get('ep')) || 0;
-        const svIndex = parseInt(urlParams.get('sv')) || 0;
+        const hasEpisodeInUrl = urlParams.has('ep');
+        const hasServerInUrl = urlParams.has('sv');
+        const resumePlayback = slug && (!hasEpisodeInUrl || !hasServerInUrl)
+            ? getResumePlayback(slug)
+            : null;
+        const epIndex = resumePlayback
+            ? resumePlayback.episodeIndex
+            : toPlaybackIndex(urlParams.get('ep'));
+        const svIndex = resumePlayback
+            ? resumePlayback.serverIndex
+            : toPlaybackIndex(urlParams.get('sv'));
         highlightNav(null);
         if (slug) {
             return playMovieFromSlugPage(slug, epIndex, svIndex);

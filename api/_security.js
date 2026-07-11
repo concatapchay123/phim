@@ -896,14 +896,23 @@ function renderPlayerHtml(source = {}, slug, epIndex, svIndex) {
                     }
 
                     var savedProgress = null;
-                    if (slug && ep) {
+                    if (slug && ep !== '') {
                         try {
                             var progressData = localStorage.getItem('watchProgress_' + slug);
                             if (progressData) {
-                                savedProgress = JSON.parse(progressData);
+                                var parsedProgress = JSON.parse(progressData);
+                                var parsedTime = Number(parsedProgress && parsedProgress.time);
+                                if (parsedProgress && String(parsedProgress.ep) === ep &&
+                                    Number.isFinite(parsedTime) && parsedTime > 0) {
+                                    savedProgress = {
+                                        time: parsedTime,
+                                        ep: ep,
+                                        sv: String(parsedProgress.sv || '0')
+                                    };
+                                }
                             }
                         } catch (e) {
-                            console.error('Error loading progress:', e);
+                            // A malformed local value should not affect playback.
                         }
                     }
 
@@ -922,6 +931,9 @@ function renderPlayerHtml(source = {}, slug, epIndex, svIndex) {
                                 }
                             }
                         });
+                        hls.on(window.Hls.Events.MANIFEST_PARSED, function () {
+                            doSeek();
+                        });
                         hls.loadSource(source);
                         hls.attachMedia(video);
                     } else {
@@ -929,18 +941,44 @@ function renderPlayerHtml(source = {}, slug, epIndex, svIndex) {
                         postPlayerStatus('error', ${JSON.stringify(PLAYER_UNAVAILABLE_MESSAGE)});
                     }
 
-                    // Seek to saved progress once metadata or data loads
+                    // HLS metadata can arrive before its seekable range is ready.
+                    // Retry a few times and only consider the restore complete once
+                    // the browser actually moves the playhead.
                     var seeked = false;
+                    var seekAttempts = 0;
+                    var seekRetryTimer = null;
                     function doSeek() {
-                        if (seeked) return;
-                        if (savedProgress && String(savedProgress.ep) === ep && savedProgress.time > 0) {
-                            try {
-                                video.currentTime = savedProgress.time;
-                                seeked = true;
-                            } catch (e) {}
+                        if (seeked || !savedProgress || seekAttempts >= 10) return;
+
+                        var targetTime = savedProgress.time;
+                        if (Number.isFinite(video.duration) && video.duration > 0) {
+                            // Do not restore a completed video to its final frame.
+                            if (targetTime >= video.duration - 3) return;
+                            targetTime = Math.min(targetTime, Math.max(0, video.duration - 1));
+                        }
+
+                        if (video.seekable && video.seekable.length) {
+                            var rangeStart = video.seekable.start(0);
+                            var rangeEnd = video.seekable.end(video.seekable.length - 1);
+                            if (targetTime < rangeStart || targetTime > rangeEnd) {
+                                targetTime = Math.min(Math.max(targetTime, rangeStart), Math.max(rangeStart, rangeEnd - 0.25));
+                            }
+                        }
+
+                        try {
+                            seekAttempts += 1;
+                            video.currentTime = targetTime;
+                            clearTimeout(seekRetryTimer);
+                            seekRetryTimer = setTimeout(function () {
+                                if (!seeked) doSeek();
+                            }, 500);
+                        } catch (e) {
+                            seekAttempts += 1;
                         }
                     }
                     video.addEventListener('loadedmetadata', doSeek);
+                    video.addEventListener('durationchange', doSeek);
+                    video.addEventListener('progress', doSeek);
                     video.addEventListener('loadeddata', function () {
                         doSeek();
                         postReady();
@@ -950,28 +988,58 @@ function renderPlayerHtml(source = {}, slug, epIndex, svIndex) {
                         postReady();
                     });
                     video.addEventListener('playing', postReady);
+                    video.addEventListener('seeked', function () {
+                        if (!savedProgress) return;
+                        if (Math.abs(video.currentTime - savedProgress.time) < 3) {
+                            seeked = true;
+                            clearTimeout(seekRetryTimer);
+                        }
+                    });
                     video.addEventListener('error', function () {
                         if (!loadEmbedFallback()) {
                             postPlayerStatus('error', ${JSON.stringify(PLAYER_UNAVAILABLE_MESSAGE)});
                         }
                     });
 
-                    // Periodically save progress on timeupdate
+                    // Persist periodically and again when this iframe is closed.
+                    // The latter is essential when a viewer leaves just after
+                    // seeking or before the three-second interval has elapsed.
                     var lastSaveTime = 0;
-                    video.addEventListener('timeupdate', function () {
-                        if (!slug || !ep) return;
+                    function saveProgress(force) {
+                        if (!slug || ep === '') return;
                         var now = Date.now();
-                        if (now - lastSaveTime > 3000) {
+                        if (!force && now - lastSaveTime < 3000) return;
+
+                        var currentTime = Number(video.currentTime);
+                        if (!Number.isFinite(currentTime) || currentTime <= 0) return;
+
+                        try {
+                            if (Number.isFinite(video.duration) && video.duration > 0 && currentTime >= video.duration - 3) {
+                                localStorage.removeItem('watchProgress_' + slug);
+                                return;
+                            }
+
                             lastSaveTime = now;
-                            try {
-                                localStorage.setItem('watchProgress_' + slug, JSON.stringify({
-                                    ep: ep,
-                                    sv: sv,
-                                    time: video.currentTime,
-                                    updatedAt: now
-                                }));
-                            } catch (e) {}
+                            localStorage.setItem('watchProgress_' + slug, JSON.stringify({
+                                ep: ep,
+                                sv: sv,
+                                time: currentTime,
+                                updatedAt: now
+                            }));
+                        } catch (e) {
+                            // Storage may be disabled by the browser; playback still works.
                         }
+                    }
+                    video.addEventListener('timeupdate', function () {
+                        saveProgress(false);
+                    });
+                    video.addEventListener('pause', function () { saveProgress(true); });
+                    video.addEventListener('ended', function () {
+                        try { localStorage.removeItem('watchProgress_' + slug); } catch (e) {}
+                    });
+                    window.addEventListener('pagehide', function () { saveProgress(true); });
+                    document.addEventListener('visibilitychange', function () {
+                        if (document.visibilityState === 'hidden') saveProgress(true);
                     });
 
                     document.addEventListener('contextmenu', function (event) { event.preventDefault(); }, true);
