@@ -28,3 +28,5 @@ test
 .gitignore
 build.bat
 fix-refs.js
+build-service-worker.js
+service-worker.template.js

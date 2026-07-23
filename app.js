@@ -1353,11 +1353,11 @@ initClientSecurityDeterrents();
 
 const introPreloader = {
     sessionKey: 'qc_intro_seen_v1',
-    assetSrc: 'https://wsrv.nl/?url=quanchillphim.vercel.app/assets/logo-loading.png&w=358&output=webp&q=80',
-    minDuration: 150,
+    assetSrc: '/assets/logo-loading.png',
+    minDuration: 1200,
     maxWait: 2500,
     reducedMinDuration: 0,
-    reducedMaxWait: 800,
+    reducedMaxWait: 2500,
 
     start(pageReadyPromise, targetUrl) {
         const loader = document.getElementById('qcIntroLoader');
@@ -1377,9 +1377,9 @@ const introPreloader = {
         const coreReady = Promise.allSettled([
             this.preloadLogo(),
             Promise.resolve(pageReadyPromise)
-        ]);
+        ]).then(() => 'ready');
 
-        return Promise.allSettled([
+        return Promise.all([
             minDelay,
             Promise.race([coreReady, timeoutDelay])
         ]).then(() => {
@@ -1459,7 +1459,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const targetUrl = new URL(window.location.href);
     const initialPageReady = runPageRouting(targetUrl);
     introPreloader.start(initialPageReady, targetUrl);
+    registerServiceWorker();
 });
+
+function registerServiceWorker() {
+    if (!('serviceWorker' in navigator) || !window.isSecureContext) return;
+
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
+            .catch(error => console.warn('Service worker registration failed:', error));
+    }, { once: true });
+}
 
 // =========================================================================
 // API CORE SERVICE
@@ -2052,49 +2062,98 @@ async function loadHomePage() {
         }
     });
 
-    const featuredRow = homeRows[0];
-    if (!featuredRow) return;
-    featuredRow.container.dataset.homeRowLoadStarted = '1';
-    const resMoi = await fetchAPI(featuredRow.endpoint, featuredRow.params);
+    if (!homeRows.length) return;
 
-    // Setup Featured Movie Hero & Switcher Carousel
-    if (resMoi && resMoi.data && resMoi.data.items && resMoi.data.items.length > 0) {
-        const featuredMovies = resMoi.data.items.slice(0, 5);
-        setupHeroSwitcher(featuredMovies);
-    }
-
-    renderRow(resMoi, elements.rowPhimMoi);
-    featuredRow.container.dataset.homeRowLoaded = '1';
-
-    const deferredRows = homeRows.slice(1).filter(row => row.container.dataset.homeRowLoaded !== '1');
-    if (!deferredRows.length) return;
-
-    const loadDeferredRow = async row => {
-        if (row.container.dataset.homeRowLoadStarted === '1') return;
+    const responses = await Promise.all(homeRows.map(async row => {
         row.container.dataset.homeRowLoadStarted = '1';
         const response = await fetchAPI(row.endpoint, row.params);
         renderRow(response, row.container);
         row.container.dataset.homeRowLoaded = '1';
-    };
+        return { row, response };
+    }));
 
-    if (!('IntersectionObserver' in window)) {
-        deferredRows.forEach(loadDeferredRow);
-        return;
-    }
+    const featuredResponse = responses[0] && responses[0].response;
+    const featuredMovies = featuredResponse?.data?.items?.slice(0, 5) || [];
+    if (featuredMovies.length) setupHeroSwitcher(featuredMovies);
 
-    const observer = new IntersectionObserver(entries => {
-        entries.forEach(entry => {
-            if (!entry.isIntersecting) return;
-            const row = deferredRows.find(item => item.container.closest('.home-row-section') === entry.target);
-            if (row) loadDeferredRow(row);
-            observer.unobserve(entry.target);
-        });
-    }, { rootMargin: '500px 0px' });
+    await waitForInitialHomeVisuals(featuredMovies[0]);
+}
 
-    deferredRows.forEach(row => {
-        const section = row.container.closest('.home-row-section');
-        if (section) observer.observe(section);
-        else loadDeferredRow(row);
+function waitForImageReady(image, options = {}) {
+    if (!image) return Promise.resolve(false);
+
+    const timeout = Number(options.timeout) || 30000;
+    const fallbackSrc = options.fallbackSrc === undefined ? '/assets/logo.png' : options.fallbackSrc;
+    return new Promise(resolve => {
+        let settled = false;
+        let fallbackApplied = image.dataset && image.dataset.qcFallbackApplied === '1';
+        const isLoaded = () => image.complete && image.naturalWidth > 0;
+        const done = success => {
+            if (settled) return;
+            settled = true;
+            image.removeEventListener('load', onLoad);
+            image.removeEventListener('error', onError);
+            clearTimeout(timer);
+            resolve(success);
+        };
+        const applyFallback = () => {
+            if (!fallbackSrc || fallbackApplied) return false;
+            fallbackApplied = true;
+            if (image.dataset) image.dataset.qcFallbackApplied = '1';
+            image.src = fallbackSrc;
+            return true;
+        };
+        const onLoad = () => {
+            if (!isLoaded()) {
+                done(false);
+                return;
+            }
+            if (typeof image.decode !== 'function') {
+                done(true);
+                return;
+            }
+            image.decode().catch(() => {}).then(() => done(isLoaded()));
+        };
+        const onError = () => {
+            if (!applyFallback()) done(false);
+        };
+        const timer = setTimeout(() => {
+            if (isLoaded()) done(true);
+            else if (!applyFallback()) done(false);
+        }, timeout);
+
+        image.addEventListener('load', onLoad);
+        image.addEventListener('error', onError);
+        if (isLoaded()) done(true);
+        else if (image.complete) onError();
+    });
+}
+
+function preloadImageAsset(src, timeout = 30000) {
+    if (!src) return Promise.resolve();
+    const image = new Image();
+    image.src = src;
+    return waitForImageReady(image, { timeout, fallbackSrc: '' });
+}
+
+function waitForInitialHomeVisuals(featuredMovie) {
+    const posters = Array.from(document.querySelectorAll(
+        '#homePage .movie-poster, #homePage .hero-thumb-img, #homePage .logo-img'
+    ));
+
+    posters.forEach((image, index) => {
+        image.loading = 'eager';
+        image.fetchPriority = index < 12 ? 'high' : 'auto';
+    });
+
+    const heroImage = featuredMovie
+        ? getImageUrl(featuredMovie.thumb_url || featuredMovie.poster_url, 'assets/logo.png', { width: 1600, quality: 82 })
+        : '';
+    return Promise.allSettled([
+        preloadImageAsset(heroImage),
+        ...posters.map(image => waitForImageReady(image))
+    ]).then(results => {
+        if (heroImage && results[0]?.value === false) changeHeroBackground('/assets/logo.png');
     });
 }
 
