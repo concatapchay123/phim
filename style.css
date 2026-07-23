@@ -671,9 +671,13 @@ html[data-theme="light"] .moon-icon { display: block; }
     position: absolute;
     top: 50%;
     transform: translateY(-50%);
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
+    /* A generous, always-available target makes the horizontal rows usable
+       without requiring users to hit the small chevron precisely. */
+    width: 56px;
+    height: 64px;
+    min-width: 56px;
+    min-height: 56px;
+    border-radius: 999px;
     background-color: var(--bg-surface);
     border: 1px solid var(--border-color);
     color: var(--text-primary);
@@ -682,23 +686,30 @@ html[data-theme="light"] .moon-icon { display: block; }
     align-items: center;
     justify-content: center;
     z-index: 5;
-    opacity: 0;
-    pointer-events: none;
+    cursor: pointer;
+    opacity: 0.78;
+    pointer-events: auto;
+    -webkit-tap-highlight-color: transparent;
     transition: opacity var(--transition-fast), transform var(--transition-fast), background-color var(--transition-fast);
 }
 
 .scroll-row-container:hover .scroll-btn {
-    opacity: 0.9;
-    pointer-events: auto;
+    opacity: 1;
 }
 
+.scroll-btn:focus-visible,
 .scroll-btn:hover {
     background-color: var(--bg-surface-hover);
     transform: translateY(-50%) scale(1.1);
 }
 
-.scroll-btn.prev { left: -10px; }
-.scroll-btn.next { right: -10px; }
+.scroll-btn:focus-visible {
+    outline: 3px solid var(--secondary);
+    outline-offset: 3px;
+}
+
+.scroll-btn.prev { left: 4px; }
+.scroll-btn.next { right: 4px; }
 
 .scroll-btn i {
     width: 20px;

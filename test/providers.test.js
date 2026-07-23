@@ -128,8 +128,12 @@ test('catalogue and detail responses are normalised from KKPhim only', async () 
     };
 
     const list = await fetchUnified(fetchMock, 'e', { keyword: 'test', limit: 10 });
+    const repeatedList = await fetchUnified(fetchMock, 'e', { keyword: 'test', limit: 10 });
     assert.equal(list.data.items[0].poster_url, 'https://phimimg.com/uploads/movies/test-poster.webp');
     assert.match(list.data.items[0].movie_id, /^q1\./);
+    assert.match(list.data.items[0].library_id, /^ql1\.[A-Za-z0-9_-]+$/);
+    assert.notEqual(list.data.items[0].movie_id, repeatedList.data.items[0].movie_id);
+    assert.equal(list.data.items[0].library_id, repeatedList.data.items[0].library_id);
     assert.equal('slug' in list.data.items[0], false);
     assert.equal('provider' in list.data.items[0], false);
     assert.equal('source_refs' in list.data.items[0], false);

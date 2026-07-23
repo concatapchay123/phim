@@ -534,8 +534,10 @@ function getResumePlayback(movieOrSlug, fallbackEpisode = 0, fallbackServer = 0)
     // Older sessions only have watchHistory.  It still contains enough data
     // to restore the correct episode and server, even without a timestamp.
     try {
-        const history = JSON.parse(localStorage.getItem('watchHistory')) || [];
-        const item = history.find(entry => entry && (entry.movie_id === key || entry.slug === slug));
+        const history = getDeduplicatedLibraryArray('watchHistory', 'watchedAt');
+        const item = history.find(entry => entry && (
+            isSameLibraryMovie(entry, movieOrSlug) || entry.movie_id === key || entry.slug === slug
+        ));
         if (item) {
             return {
                 episodeIndex: toPlaybackIndex(item.episodeIndex, fallbackEpisode),
@@ -1559,6 +1561,82 @@ function readLibraryArray(storageKey) {
     }
 }
 
+function normaliseLibraryIdentityText(value) {
+    return String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+}
+
+function getLibraryIdentityKeys(movie) {
+    if (!movie || typeof movie !== 'object') return [];
+
+    const keys = [];
+    const libraryId = String(movie.library_id || '').trim();
+    const slug = normaliseLibraryIdentityText(movie.slug);
+    const name = normaliseLibraryIdentityText(movie.name);
+    const originName = normaliseLibraryIdentityText(movie.origin_name);
+    const year = String(movie.year || '').trim();
+    const movieId = String(movie.movie_id || '').trim();
+
+    if (libraryId) keys.push(`library:${libraryId}`);
+    if (slug) keys.push(`slug:${slug}`);
+    // Older local entries do not have library_id or slug. This composite key
+    // safely collapses their historical duplicates during the one-time cleanup.
+    if (name || originName) keys.push(`metadata:${name}|${originName}|${year}`);
+    if (movieId) keys.push(`movie:${movieId}`);
+    return keys;
+}
+
+function isSameLibraryMovie(left, right) {
+    const leftKeys = getLibraryIdentityKeys(left);
+    const rightKeys = new Set(getLibraryIdentityKeys(right));
+    return leftKeys.some(key => rightKeys.has(key));
+}
+
+function mergeLibraryEntries(preferred, fallback) {
+    const merged = { ...preferred };
+    Object.keys(fallback || {}).forEach(key => {
+        if ((merged[key] === undefined || merged[key] === null || merged[key] === '') && fallback[key] !== undefined && fallback[key] !== null && fallback[key] !== '') {
+            merged[key] = fallback[key];
+        }
+    });
+    return merged;
+}
+
+function dedupeLibraryEntries(entries, timestampField) {
+    const sorted = (Array.isArray(entries) ? entries : [])
+        .map((entry, index) => ({ entry, index }))
+        .filter(({ entry }) => entry && typeof entry === 'object' && !Array.isArray(entry))
+        .sort((left, right) => {
+            const rightTime = Number(right.entry[timestampField]) || 0;
+            const leftTime = Number(left.entry[timestampField]) || 0;
+            return rightTime - leftTime || left.index - right.index;
+        });
+
+    return sorted.reduce((deduped, { entry }) => {
+        const duplicateIndex = deduped.findIndex(saved => isSameLibraryMovie(saved, entry));
+        if (duplicateIndex === -1) deduped.push({ ...entry });
+        else deduped[duplicateIndex] = mergeLibraryEntries(deduped[duplicateIndex], entry);
+        return deduped;
+    }, []);
+}
+
+function getDeduplicatedLibraryArray(storageKey, timestampField) {
+    const entries = readLibraryArray(storageKey);
+    const deduped = dedupeLibraryEntries(entries, timestampField);
+    if (JSON.stringify(entries) !== JSON.stringify(deduped)) {
+        try {
+            localStorage.setItem(storageKey, JSON.stringify(deduped));
+        } catch (_) {
+            // Rendering the current session is still possible if storage is full.
+        }
+    }
+    return deduped;
+}
+
 const libraryManager = {
     init() {
         this.updateLibraryCounters();
@@ -1586,14 +1664,14 @@ const libraryManager = {
 
     // --- Watchlist ---
     getWatchlist() {
-        return readLibraryArray('watchlist');
+        return getDeduplicatedLibraryArray('watchlist', 'addedAt');
     },
     addToWatchlist(movie) {
         const watchlist = this.getWatchlist();
-        const movieId = getMovieStorageId(movie);
-        if (!watchlist.some(m => (m.movie_id || m.slug) === movieId)) {
+        if (!watchlist.some(item => isSameLibraryMovie(item, movie))) {
             watchlist.unshift({
-                movie_id: movieId,
+                movie_id: getMovieStorageId(movie),
+                library_id: String(movie.library_id || ''),
                 slug: movie.slug || '',
                 name: movie.name,
                 origin_name: movie.origin_name,
@@ -1609,28 +1687,26 @@ const libraryManager = {
         }
     },
     removeFromWatchlist(movieOrSlug) {
-        const movieId = getMovieStorageId(movieOrSlug);
         let watchlist = this.getWatchlist();
-        watchlist = watchlist.filter(m => (m.movie_id || m.slug) !== movieId);
+        watchlist = watchlist.filter(item => !isSameLibraryMovie(item, movieOrSlug));
         localStorage.setItem('watchlist', JSON.stringify(watchlist));
         this.updateLibraryCounters();
     },
     isInWatchlist(movieOrSlug) {
-        const movieId = getMovieStorageId(movieOrSlug);
-        return this.getWatchlist().some(m => (m.movie_id || m.slug) === movieId);
+        return this.getWatchlist().some(item => isSameLibraryMovie(item, movieOrSlug));
     },
 
     // --- Watch History ---
     getHistory() {
-        return readLibraryArray('watchHistory');
+        return getDeduplicatedLibraryArray('watchHistory', 'watchedAt');
     },
     addToHistory(movie, epName, epIndex, serverIndex) {
         const history = this.getHistory();
-        const movieId = getMovieStorageId(movie);
-        const filteredHistory = history.filter(h => (h.movie_id || h.slug) !== movieId);
+        const filteredHistory = history.filter(item => !isSameLibraryMovie(item, movie));
         
         filteredHistory.unshift({
-            movie_id: movieId,
+            movie_id: getMovieStorageId(movie),
+            library_id: String(movie.library_id || ''),
             slug: movie.slug || '',
             name: movie.name,
             origin_name: movie.origin_name,
@@ -1648,10 +1724,9 @@ const libraryManager = {
         this.updateLibraryCounters();
     },
     removeFromHistory(movieOrSlug) {
-        const movieId = getMovieStorageId(movieOrSlug);
         let history = this.getHistory();
-        const removedItem = history.find(h => (h.movie_id || h.slug) === movieId);
-        history = history.filter(h => (h.movie_id || h.slug) !== movieId);
+        const removedItem = history.find(item => isSameLibraryMovie(item, movieOrSlug));
+        history = history.filter(item => !isSameLibraryMovie(item, movieOrSlug));
         localStorage.setItem('watchHistory', JSON.stringify(history));
         this.updateLibraryCounters();
         this.renderHistory();
@@ -3481,7 +3556,7 @@ function renderMovieDetailsPage(movie, tmdbBackdrop = null, tmdbPoster = null) {
     if (!detailsBody) return;
 
     const history = libraryManager.getHistory();
-    const movieHistory = history.find(h => (h.movie_id || h.slug) === getMovieStorageId(movie));
+    const movieHistory = history.find(item => isSameLibraryMovie(item, movie));
     const lastEp = movieHistory ? movieHistory.episodeIndex : 0;
     const lastSv = movieHistory ? movieHistory.serverIndex : null;
     const displayServerIndex = getPreferredServerIndex(movie, lastSv);

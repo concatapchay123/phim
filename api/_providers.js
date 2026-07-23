@@ -20,6 +20,7 @@ const DETAIL_KINDS = new Set(['f', 'g', 'm', 'n']);
 const ALLOWED_QUERY = new Set(['page', 'limit', 'keyword', 'sort_field', 'sort_type', 'sort_lang', 'category', 'country', 'year']);
 const DEFAULT_TIMEOUT_MS = Math.max(900, Number(process.env.KKPHIM_API_TIMEOUT_MS || 2500));
 const MOVIE_ID_VERSION = 'q1';
+const LIBRARY_ID_VERSION = 'ql1';
 // A dedicated secret allows independent rotation.  Existing deployments can
 // safely derive this key from PLAYER_TOKEN_SECRET until MOVIE_ID_SECRET is set.
 const LOCAL_MOVIE_ID_SECRET = 'quanchill-local-movie-id-secret-change-me';
@@ -39,6 +40,22 @@ function normalizeSlug(value) {
 
 function movieIdKey() {
     return crypto.createHash('sha256').update(`movie-id:${MOVIE_ID_SECRET}`).digest();
+}
+
+function libraryIdKey() {
+    return crypto.createHash('sha256').update(`library-id:${MOVIE_ID_SECRET}`).digest();
+}
+
+// movie_id is deliberately encrypted with a random IV so it can be used as
+// an opaque navigation token. The library also needs a stable, non-reversible
+// key to recognise the same movie across independent API responses.
+function createLibraryId(reference) {
+    if (!reference || reference.provider !== 'kkphim' || !/^[a-z0-9-]{1,160}$/.test(reference.slug || '')) return '';
+    const digest = crypto
+        .createHmac('sha256', libraryIdKey())
+        .update(`${reference.provider}:${reference.slug}`)
+        .digest('base64url');
+    return `${LIBRARY_ID_VERSION}.${digest}`;
 }
 
 function encodeMovieId(refs) {
@@ -188,7 +205,8 @@ function normaliseMovie(movie) {
         ...publicMovie,
         poster_url: imageUrlFor('kkphim', movie.poster_url),
         thumb_url: imageUrlFor('kkphim', movie.thumb_url),
-        movie_id: encodeMovieId([source])
+        movie_id: encodeMovieId([source]),
+        library_id: createLibraryId(source)
     };
 }
 
@@ -274,6 +292,7 @@ module.exports = {
     buildProviderUrl,
     decodeMovieId,
     encodeMovieId,
+    createLibraryId,
     fetchProvider,
     fetchUnified,
     imageUrlFor,
