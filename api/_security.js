@@ -13,7 +13,12 @@ const HLS_VALIDATION_TIMEOUT_MS = Math.max(800, Number(process.env.HLS_VALIDATIO
 // links valid longer than that window so a cached catalogue never contains
 // already-expired image URLs.
 const IMAGE_TOKEN_TTL_SECONDS = Math.max(2592000, Number(process.env.IMAGE_TOKEN_TTL_SECONDS || 2592000));
-const ENABLE_STREAM_PROXY = process.env.ENABLE_STREAM_PROXY === 'true' && process.env.ALLOW_HIGH_BANDWIDTH_STREAM_PROXY === 'true';
+// Playback is intentionally same-origin so neither the page nor the player
+// exposes a provider URL. Keep this enabled by default in every deployment;
+// a host that cannot carry the bandwidth must explicitly opt out with either
+// variable set to "false".
+const ENABLE_STREAM_PROXY = process.env.ENABLE_STREAM_PROXY !== 'false' &&
+    process.env.ALLOW_HIGH_BANDWIDTH_STREAM_PROXY !== 'false';
 // Images are part of the public response too. Always proxy them by default so
 // a catalogue payload or an <img> element never discloses the image provider.
 // Set this explicitly to false only for a trusted local diagnostic session.

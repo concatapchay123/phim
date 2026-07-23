@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { spawnSync } = require('node:child_process');
 // Player-source tests exercise the strict same-origin proxy path. Set this
 // before loading the security module, whose deployment flags are immutable.
 process.env.ENABLE_STREAM_PROXY = 'true';
@@ -17,6 +18,24 @@ const {
     resolveEpisodeSource,
     sanitizeUpstreamData
 } = require('../api/_security');
+
+test('the protected stream relay is enabled by default in production', () => {
+    const environment = { ...process.env, NODE_ENV: 'production' };
+    delete environment.ENABLE_STREAM_PROXY;
+    delete environment.ALLOW_HIGH_BANDWIDTH_STREAM_PROXY;
+
+    const result = spawnSync(process.execPath, [
+        '-e',
+        "process.stdout.write(String(require('./api/_security').isStreamProxyEnabled()))"
+    ], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        env: environment
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, 'true');
+});
 
 const expectedPaths = {
     a: '/v1/api/home',

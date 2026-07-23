@@ -1,5 +1,14 @@
 {
     "version": 2,
+    "env": {
+        "ENABLE_STREAM_PROXY": "true",
+        "ALLOW_HIGH_BANDWIDTH_STREAM_PROXY": "true"
+    },
+    "functions": {
+        "api/stream.js": {
+            "maxDuration": 60
+        }
+    },
     "headers": [
         {
             "source": "/assets/(.*)",

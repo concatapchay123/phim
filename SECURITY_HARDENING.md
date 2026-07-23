@@ -7,7 +7,8 @@ Set these in Vercel Project Settings > Environment Variables:
 - `PLAYER_TOKEN_SECRET`: random secret of at least 32 characters. Required in production; do not reuse a JWT or application secret.
 - `SECURITY_LOCK_SECRET`: a different random secret of at least 32 characters. Required in production.
 - `MOVIE_ID_SECRET`: optional separate random secret used to encrypt opaque movie identifiers. If omitted, the application derives this key from `PLAYER_TOKEN_SECRET` for backwards-compatible deployment.
-- `ENABLE_STREAM_PROXY`: leave unset or `false` unless you intentionally want video traffic to pass through Vercel Functions.
+- `ENABLE_STREAM_PROXY`: defaults to `true` so the browser only receives same-origin, signed stream routes. Set it to `false` only when the deployment cannot relay video traffic.
+- `ALLOW_HIGH_BANDWIDTH_STREAM_PROXY`: defaults to `true`; set it to `false` alongside the previous variable to explicitly opt out of the protected stream relay.
 - `ENABLE_IMAGE_PROXY`: leave unset or `false` unless you intentionally want image traffic to pass through Vercel Functions.
 - `ENABLE_LEGACY_PROXY`: leave unset or `false`.
 - `ALLOW_EXTERNAL_EMBED_FALLBACK`: leave unset or `false`. When enabled, films without a direct HLS stream may open a third-party iframe player, which can display that provider's own domain and diagnostics.
@@ -41,14 +42,14 @@ Use Vercel Firewall before application code. Suggested starting rules:
 
 - Rate limit `/api/c*`: 120 requests per 60 seconds per IP, action 429 or Challenge.
 - Rate limit `/api/player*`: 30 requests per 60 seconds per IP, action 429 or Challenge.
-- Block `/api/stream*` unless `ENABLE_STREAM_PROXY=true`.
+- Rate limit `/api/stream*` according to the expected number of concurrent viewers; this route is required for protected playback.
 - Rate limit `/api/i*`: 300 requests per 60 seconds per IP if image proxy is enabled.
 - Block obvious scanner paths: `/wp-*`, `/xmlrpc.php`, `/.env`, `/admin*`, `/phpmyadmin*`.
 - Challenge or deny empty/bad user agents if traffic charts show abuse.
 
 ## Quota notes
 
-Video proxying is the largest quota risk. A single 10 minute playback can transfer gigabytes if HLS segments are relayed through `/api/stream`. The default configuration plays HLS directly from the upstream source and never falls back to an external embed unless explicitly enabled.
+Video proxying is the largest quota risk. A single 10 minute playback can transfer gigabytes if HLS segments are relayed through `/api/stream`. The default configuration keeps the stream relay enabled so the browser never receives an upstream video URL; monitor Vercel bandwidth and function usage accordingly.
 
 External iframe fallback is disabled by default. This prevents an external
 player from taking fullscreen and displaying its own URL/technical overlay,
