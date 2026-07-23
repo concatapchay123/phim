@@ -1,8 +1,8 @@
 const crypto = require('crypto');
+const { PROVIDERS, resolveMovie } = require('./_providers');
 
-const API_BASE_URL = (process.env.MOVIE_API_BASE_URL || 'https://ophim1.com').replace(/\/+$/, '');
-const FALLBACK_API_BASE_URL = (process.env.FALLBACK_MOVIE_API_BASE_URL || 'https://phimapi.com').replace(/\/+$/, '');
-const CDN_IMAGE_BASE_URL = (process.env.CDN_IMAGE_BASE_URL || 'https://img.ophim.live/uploads/movies/').replace(/\/?$/, '/');
+const API_BASE_URL = (process.env.KKPHIM_API_BASE_URL || 'https://phimapi.com').replace(/\/+$/, '');
+const KKPHIM_IMAGE_BASE_URL = (process.env.KKPHIM_IMAGE_BASE_URL || 'https://phimimg.com/').replace(/\/?$/, '/');
 const IS_PRODUCTION = process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production';
 const LOCAL_PLAYER_TOKEN_SECRET = 'quanchill-local-player-secret-change-me';
 const LOCAL_SECURITY_LOCK_SECRET = 'quanchill-local-security-lock-secret-change-me';
@@ -33,6 +33,7 @@ const QUERY_ALLOWLIST = new Set([
 ]);
 
 const API_PATH_ALLOWLIST = [
+    /^\/v1\/api\/home$/,
     /^\/v1\/api\/danh-sach\/[a-z0-9-]+$/,
     /^\/v1\/api\/tim-kiem$/,
     /^\/v1\/api\/phim\/[a-z0-9-]+$/,
@@ -40,17 +41,20 @@ const API_PATH_ALLOWLIST = [
     /^\/v1\/api\/the-loai$/,
     /^\/v1\/api\/the-loai\/[a-z0-9-]+$/,
     /^\/v1\/api\/quoc-gia$/,
-    /^\/v1\/api\/quoc-gia\/[a-z0-9-]+$/
+    /^\/v1\/api\/quoc-gia\/[a-z0-9-]+$/,
+    /^\/nam-phat-hanh$/,
+    /^\/v1\/api\/phim\/[a-z0-9-]+\/(peoples|keywords)$/
 ];
 
 const CLIENT_KIND_MAP = {
-    a: '/v1/api/danh-sach/phim-moi-cap-nhat',
+    a: '/v1/api/home',
     b: '/v1/api/danh-sach/phim-bo',
     c: '/v1/api/danh-sach/phim-le',
     d: '/v1/api/danh-sach/phim-chieu-rap',
     e: '/v1/api/tim-kiem',
     j: '/v1/api/the-loai',
-    k: '/v1/api/quoc-gia'
+    k: '/v1/api/quoc-gia',
+    l: '/nam-phat-hanh'
 };
 
 const SENSITIVE_VIDEO_KEYS = new Set([
@@ -66,8 +70,11 @@ const SENSITIVE_VIDEO_KEYS = new Set([
 
 const IMAGE_KEYS = new Set(['poster_url', 'thumb_url', 'file_path', 'image']);
 const IMAGE_HOST_ALLOWLIST = new Set([
-    'img.ophim.live',
     'image.tmdb.org',
+    'phimapi.com',
+    'www.phimapi.com',
+    'phimimg.com',
+    'www.phimimg.com',
     'via.placeholder.com'
 ]);
 
@@ -298,6 +305,10 @@ function buildClientApiUrl(kindValue, params = {}) {
         apiPath = `/v1/api/phim/${normalizeSlug(slug)}`;
     } else if (kind === 'g') {
         apiPath = `/v1/api/phim/${normalizeSlug(slug)}/images`;
+    } else if (kind === 'm') {
+        apiPath = `/v1/api/phim/${normalizeSlug(slug)}/peoples`;
+    } else if (kind === 'n') {
+        apiPath = `/v1/api/phim/${normalizeSlug(slug)}/keywords`;
     } else if (kind === 'h') {
         apiPath = `/v1/api/the-loai/${normalizeSlug(slug)}`;
     } else if (kind === 'i') {
@@ -345,7 +356,7 @@ function sanitizeUpstreamData(value, seen = new WeakSet()) {
 function sanitizeStringValue(value) {
     const text = String(value || '');
     if (/^https?:\/\//i.test(text)) return '';
-    if (/(^|[.\-/])(?:o?phim|phimapi)(?:[.\-/]|$)/i.test(text)) return '';
+    if (/(^|[.\-/])phimapi(?:[.\-/]|$)/i.test(text)) return '';
     return text;
 }
 
@@ -373,7 +384,7 @@ function normalizeImageUrl(src, sourceKey = '') {
     } else if (rawValue.startsWith('/') && sourceKey === 'file_path') {
         targetUrl = new URL(`https://image.tmdb.org/t/p/original${rawValue}`);
     } else {
-        targetUrl = new URL(rawValue.replace(/^\/+/, ''), CDN_IMAGE_BASE_URL);
+        targetUrl = new URL(rawValue.replace(/^\/+/, ''), KKPHIM_IMAGE_BASE_URL);
     }
 
     if (!IMAGE_HOST_ALLOWLIST.has(targetUrl.hostname)) {
@@ -439,10 +450,11 @@ function isSameOriginRequest(req) {
     const referer = req.headers.referer || req.headers.referrer;
     const fetchSite = String(req.headers['sec-fetch-site'] || '').toLowerCase();
 
-    // A protected endpoint must be reached from a page on this origin.  The
-    // former permissive fallback accepted requests with neither header, which
-    // made direct curl/script requests look legitimate.
-    if (!expectedOrigin || (!origin && !referer)) return false;
+    // Iframe navigations can legitimately omit Origin and Referer when the
+    // page uses a strict referrer policy.  Browsers still attach the
+    // unforgeable Sec-Fetch-Site header for a same-origin navigation.
+    if (!expectedOrigin) return false;
+    if (!origin && !referer && fetchSite !== 'same-origin') return false;
 
     if (origin && expectedOrigin && origin !== expectedOrigin) return false;
 
@@ -618,7 +630,7 @@ function escapeAttr(value = '') {
     return escapeHtml(value).replace(/`/g, '&#096;');
 }
 
-function createEpisodeSourceCandidate(episode, episodeIndex, serverIndex) {
+function createEpisodeSourceCandidate(episode, episodeIndex, serverIndex, provider = 'kkphim') {
     if (!episode) return null;
 
     const hlsUrl = String(episode.link_m3u8 || episode.m3u8 || episode.video_url || '').trim();
@@ -631,11 +643,50 @@ function createEpisodeSourceCandidate(episode, episodeIndex, serverIndex) {
         embedUrl: isAbsoluteHttpUrl(embedUrl) ? embedUrl : '',
         episodeName: episode.name || `Episode ${episodeIndex + 1}`,
         episodeIndex,
-        serverIndex
+        serverIndex,
+        provider
     };
 }
 
-function pickEpisodeSource(episodes, episodeIndex, serverIndex) {
+function episodeIdentity(episode) {
+    const values = [episode?.slug, episode?.name, episode?.filename].map(value => String(value || '').trim().toLowerCase());
+    for (const value of values) {
+        if (!value) continue;
+        if (/^(full|tap-full|episode-full)$/.test(value)) return 'full';
+        const numbered = value.match(/(?:tap|tập|episode|ep)?\s*[-_. ]*(\d{1,4})(?:\D|$)/i);
+        if (numbered) return `number:${Number(numbered[1])}`;
+    }
+    return values.map(value => value.replace(/[^a-z0-9]+/g, '')).find(Boolean) || '';
+}
+
+function normaliseLanguageText(value = '') {
+    return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+function isRequestedServerIndex(value) {
+    return value !== undefined && value !== null && value !== '' && Number.isFinite(Number(value)) && Number(value) >= 0;
+}
+
+function preferredServerIndex(movie, requestedServerIndex) {
+    const servers = Array.isArray(movie?.episodes) ? movie.episodes : [];
+    if (isRequestedServerIndex(requestedServerIndex)) return Math.min(normalizeIndex(requestedServerIndex, 0), Math.max(0, servers.length - 1));
+
+    const language = normaliseLanguageText([
+        movie?.lang,
+        ...(Array.isArray(movie?.lang_key) ? movie.lang_key : [])
+    ].join(' '));
+    const preferredLabels = [];
+    if (/long tieng|longtieng|\bdub\b|\blt\b/.test(language)) preferredLabels.push(/long\s*tieng|longtieng|\bdub\b/i);
+    if (/thuyet minh|thuyetminh|\btm\b/.test(language)) preferredLabels.push(/thuyet\s*minh|thuyetminh|\btm\b/i);
+
+    for (const label of preferredLabels) {
+        const index = servers.findIndex(server => label.test(normaliseLanguageText(server?.server_name)) && Array.isArray(server?.server_data) && server.server_data.length > 0);
+        if (index !== -1) return index;
+    }
+    return 0;
+}
+
+function pickEpisodeSource(episodes, episodeIndex, serverIndex, provider = 'kkphim', requestedEpisode = null, options = {}) {
     const servers = Array.isArray(episodes) ? episodes : [];
     const attempts = [];
     const seen = new Set();
@@ -647,7 +698,33 @@ function pickEpisodeSource(episodes, episodeIndex, serverIndex) {
         attempts.push({ serverIdx, epIdx });
     };
 
-    addAttempt(serverIndex, episodeIndex);
+    const strictEpisodeMatch = Boolean(options.strictEpisodeMatch);
+    const requestedIdentity = episodeIdentity(requestedEpisode);
+    if (strictEpisodeMatch && requestedIdentity) {
+        servers.forEach((server, serverIdx) => {
+            const serverData = Array.isArray(server?.server_data) ? server.server_data : [];
+            serverData.forEach((episode, episodeIdx) => {
+                if (episodeIdentity(episode) === requestedIdentity) addAttempt(serverIdx, episodeIdx);
+            });
+        });
+    }
+    if (strictEpisodeMatch) {
+        if (attempts.length > 0) {
+            // Exact title/number match is the only allowed fallback for a series.
+        } else {
+            const playable = servers.flatMap((server, serverIdx) => (Array.isArray(server?.server_data) ? server.server_data : [])
+                .map((episode, episodeIdx) => ({ serverIdx, episodeIdx, episode }))
+                .filter(({ episode }) => createEpisodeSourceCandidate(episode, 0, 0, provider)));
+            const isSingleEpisodeFallback = episodeIndex === 0 && playable.length > 0 && playable.every(({ episode }) => episodeIdentity(episode) === 'full' || !episodeIdentity(episode));
+            if (!isSingleEpisodeFallback) return null;
+            playable.forEach(({ serverIdx, episodeIdx }) => addAttempt(serverIdx, episodeIdx));
+        }
+    } else {
+        addAttempt(serverIndex, episodeIndex);
+    }
+    if (strictEpisodeMatch) {
+        // Do not fall through to index-based attempts after a mapped fallback.
+    } else {
     servers.forEach((_server, idx) => addAttempt(idx, episodeIndex));
 
     const requestedServer = servers[serverIndex];
@@ -658,18 +735,19 @@ function pickEpisodeSource(episodes, episodeIndex, serverIndex) {
         const serverData = Array.isArray(server?.server_data) ? server.server_data : [];
         serverData.forEach((_episode, epIdx) => addAttempt(idx, epIdx));
     });
+    }
 
     for (const attempt of attempts) {
         const server = servers[attempt.serverIdx];
         const serverData = Array.isArray(server?.server_data) ? server.server_data : [];
-        const candidate = createEpisodeSourceCandidate(serverData[attempt.epIdx], attempt.epIdx, attempt.serverIdx);
+        const candidate = createEpisodeSourceCandidate(serverData[attempt.epIdx], attempt.epIdx, attempt.serverIdx, provider);
         if (candidate) return candidate;
     }
 
     return null;
 }
 
-async function canProxyHlsSource(fetchImpl, urlValue) {
+async function canProxyHlsSource(fetchImpl, urlValue, provider = 'kkphim') {
     if (!isAbsoluteHttpUrl(urlValue)) return false;
 
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
@@ -682,7 +760,7 @@ async function canProxyHlsSource(fetchImpl, urlValue) {
             headers: {
                 Accept: 'application/vnd.apple.mpegurl, application/x-mpegURL, */*',
                 Range: 'bytes=0-65535',
-                Referer: 'https://ophim1.com/',
+                Referer: PROVIDERS[provider]?.referrer || PROVIDERS.kkphim.referrer,
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
         });
@@ -708,7 +786,7 @@ async function finalizeEpisodeSource(fetchImpl, candidate) {
             };
         }
 
-        const canProxyHls = await canProxyHlsSource(fetchImpl, candidate.hlsUrl);
+        const canProxyHls = await canProxyHlsSource(fetchImpl, candidate.hlsUrl, candidate.provider);
         if (canProxyHls) {
             return {
                 ...candidate,
@@ -761,33 +839,16 @@ async function fetchJson(fetchImpl, urlValue) {
 }
 
 async function resolveEpisodeSource(fetchImpl, options) {
-    const slug = normalizeSlug(options.slug);
     const episodeIndex = normalizeIndex(options.episodeIndex, 0);
-    const serverIndex = normalizeIndex(options.serverIndex, 0);
-
-    const primaryUrl = buildUpstreamApiUrl(`/v1/api/phim/${slug}`);
-    const primaryData = await fetchJson(fetchImpl, primaryUrl.toString());
-    const primaryMovie = primaryData?.data?.item || primaryData?.movie || primaryData?.item;
-
-    let source = await finalizeEpisodeSource(
-        fetchImpl,
-        pickEpisodeSource(primaryMovie?.episodes, episodeIndex, serverIndex)
-    );
-    let movieName = primaryMovie?.name || primaryMovie?.origin_name || slug;
-
-    if (!source) {
-        try {
-            const fallbackUrl = `${FALLBACK_API_BASE_URL}/phim/${encodeURIComponent(slug)}`;
-            const fallbackData = await fetchJson(fetchImpl, fallbackUrl);
-            const fallbackMovie = fallbackData?.movie || fallbackData?.data?.item || fallbackData?.item;
-            source = await finalizeEpisodeSource(
-                fetchImpl,
-                pickEpisodeSource(fallbackData?.episodes || fallbackMovie?.episodes, episodeIndex, serverIndex)
-            );
-            movieName = fallbackMovie?.name || fallbackMovie?.origin_name || movieName;
-        } catch (fallbackError) {
-            if (!primaryMovie) throw fallbackError;
-        }
+    const resolved = await resolveMovie(fetchImpl, { m: options.movieId, slug: options.slug });
+    const serverIndex = preferredServerIndex(resolved.movie, options.serverIndex);
+    let source = null;
+    let movieName = resolved.movie?.name || resolved.movie?.origin_name || options.slug;
+    const primaryEntry = resolved.sourceMovie;
+    const requestedEpisode = primaryEntry?.movie?.episodes?.[serverIndex]?.server_data?.[episodeIndex] || null;
+    if (primaryEntry) {
+        const candidate = pickEpisodeSource(primaryEntry.movie?.episodes, episodeIndex, serverIndex, 'kkphim', requestedEpisode);
+        source = await finalizeEpisodeSource(fetchImpl, candidate);
     }
 
     if (!source || !/^https?:\/\//i.test(source.url)) {
@@ -802,7 +863,7 @@ async function resolveEpisodeSource(fetchImpl, options) {
     };
 }
 
-function renderPlayerHtml(source = {}, slug, epIndex, svIndex) {
+function renderPlayerHtml(source = {}, slug, epIndex, svIndex, movieId = '') {
     const title = `${source.movieName || 'Quán Chill'} - ${source.episodeName || ''}`.trim();
     const safeTitle = escapeHtml(title);
     const unavailableMessage = source.message || PLAYER_UNAVAILABLE_MESSAGE;
@@ -819,7 +880,6 @@ function renderPlayerHtml(source = {}, slug, epIndex, svIndex) {
                 }());
             </script>
         `;
-
     let playerMarkup = noSourceMessage;
     let scriptMarkup = statusScript('error');
 
@@ -841,6 +901,7 @@ function renderPlayerHtml(source = {}, slug, epIndex, svIndex) {
                     var source = ${JSON.stringify(streamUrl)};
                     var embedFallback = ${JSON.stringify(source.embedUrl || '')};
                     var slug = ${JSON.stringify(slug || '')};
+                    var movieKey = ${JSON.stringify(movieId || slug || '')};
                     var ep = ${JSON.stringify(epIndex !== undefined ? String(epIndex) : '')};
                     var sv = ${JSON.stringify(svIndex !== undefined ? String(svIndex) : '')};
                     if (!video) return;
@@ -898,7 +959,7 @@ function renderPlayerHtml(source = {}, slug, epIndex, svIndex) {
                     var savedProgress = null;
                     if (slug && ep !== '') {
                         try {
-                            var progressData = localStorage.getItem('watchProgress_' + slug);
+                            var progressData = localStorage.getItem('watchProgress_' + movieKey) || localStorage.getItem('watchProgress_' + slug);
                             if (progressData) {
                                 var parsedProgress = JSON.parse(progressData);
                                 var parsedTime = Number(parsedProgress && parsedProgress.time);
@@ -1015,12 +1076,12 @@ function renderPlayerHtml(source = {}, slug, epIndex, svIndex) {
 
                         try {
                             if (Number.isFinite(video.duration) && video.duration > 0 && currentTime >= video.duration - 3) {
-                                localStorage.removeItem('watchProgress_' + slug);
+                                localStorage.removeItem('watchProgress_' + movieKey);
                                 return;
                             }
 
                             lastSaveTime = now;
-                            localStorage.setItem('watchProgress_' + slug, JSON.stringify({
+                            localStorage.setItem('watchProgress_' + movieKey, JSON.stringify({
                                 ep: ep,
                                 sv: sv,
                                 time: currentTime,
@@ -1035,7 +1096,7 @@ function renderPlayerHtml(source = {}, slug, epIndex, svIndex) {
                     });
                     video.addEventListener('pause', function () { saveProgress(true); });
                     video.addEventListener('ended', function () {
-                        try { localStorage.removeItem('watchProgress_' + slug); } catch (e) {}
+                        try { localStorage.removeItem('watchProgress_' + movieKey); } catch (e) {}
                     });
                     window.addEventListener('pagehide', function () { saveProgress(true); });
                     document.addEventListener('visibilitychange', function () {
@@ -1159,6 +1220,7 @@ module.exports = {
     normalizeImageUrl,
     normalizeIndex,
     normalizeSlug,
+    pickEpisodeSource,
     renderPlayerHtml,
     resolveImageTarget,
     resolveEpisodeSource,

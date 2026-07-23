@@ -66,18 +66,19 @@ module.exports = async (req, res) => {
     try {
         const source = await resolveEpisodeSource(fetch, {
             slug: req.query.slug,
+            movieId: req.query.m,
             episodeIndex: req.query.ep,
             serverIndex: req.query.sv
         });
 
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
-        return res.status(200).send(renderPlayerHtml(source, req.query.slug, req.query.ep, req.query.sv));
+        return res.status(200).send(renderPlayerHtml(source, req.query.slug, req.query.ep, req.query.sv, req.query.m));
     } catch (error) {
         console.error('Player resolve error:', error.message);
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
         return res.status(error.statusCode || 500).send(renderPlayerHtml({
             type: 'none',
             message: 'Phim hiện đang được cập nhật'
-        }, req.query.slug, req.query.ep, req.query.sv));
+        }, req.query.slug, req.query.ep, req.query.sv, req.query.m));
     }
 };

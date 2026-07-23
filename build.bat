@@ -1,6 +1,6 @@
 @echo off
 echo ========================================
-echo   BUILD SCRIPT - OPHIM Deploy (Hardened)
+echo   BUILD SCRIPT - KKPHIM Deploy (Hardened)
 echo ========================================
 
 echo.

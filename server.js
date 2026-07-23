@@ -22,9 +22,14 @@ const {
     setSecurityHeaders,
     verifySignedToken
 } = require('./api/_security');
+const { fetchUnified } = require('./api/_providers');
 
 const PORT = process.env.PORT || 3000;
 const ROOT_DIR = __dirname;
+
+function upstreamReferrer() {
+    return 'https://www.kkphim2.com/';
+}
 
 const CLIENT_CACHE_BY_KIND = {
     a: { ttl: 600, stale: 300 },
@@ -37,18 +42,23 @@ const CLIENT_CACHE_BY_KIND = {
     h: { ttl: 600, stale: 300 },
     i: { ttl: 600, stale: 300 },
     j: { ttl: 86400, stale: 3600 },
-    k: { ttl: 86400, stale: 3600 }
+    k: { ttl: 86400, stale: 3600 },
+    l: { ttl: 86400, stale: 3600 },
+    m: { ttl: 21600, stale: 3600 },
+    n: { ttl: 21600, stale: 3600 }
 };
 
 function getClientCacheControl(kind) {
     const cache = CLIENT_CACHE_BY_KIND[String(kind || '')] || { ttl: 300, stale: 60 };
     const browserMaxAge = Math.min(cache.ttl, Math.max(60, Math.floor(cache.ttl / 2)));
-    return `public, max-age=${browserMaxAge}, s-maxage=${cache.ttl}, stale-while-revalidate=${cache.stale}`;
+    // Do not make a same-origin-protected response available from a shared
+    // cache.  Vercel can satisfy a public cache hit before this server checks
+    // request provenance.
+    return `private, max-age=${browserMaxAge}, stale-while-revalidate=${cache.stale}`;
 }
 
 function getClientCdnCacheControl(kind) {
-    const cache = CLIENT_CACHE_BY_KIND[String(kind || '')] || { ttl: 300, stale: 60 };
-    return `public, s-maxage=${cache.ttl}, stale-while-revalidate=${cache.stale}`;
+    return 'no-store';
 }
 
 function applyClientCacheHeaders(res, kind) {
@@ -56,6 +66,7 @@ function applyClientCacheHeaders(res, kind) {
     res.setHeader('Cache-Control', getClientCacheControl(kind));
     res.setHeader('CDN-Cache-Control', cdnCacheControl);
     res.setHeader('Vercel-CDN-Cache-Control', cdnCacheControl);
+    res.setHeader('Vary', 'Origin, Referer, Sec-Fetch-Site, Cookie');
 }
 
 function applyImageCacheHeaders(res) {
@@ -76,9 +87,7 @@ function applyNoStoreHeaders(res) {
     res.setHeader('Vercel-CDN-Cache-Control', 'no-store');
 }
 
-const FALLBACK_API_BASE_URL = (process.env.FALLBACK_MOVIE_API_BASE_URL || 'https://phimapi.com').replace(/\/+$/, '');
-const UPSTREAM_TIMEOUT_MS = Math.max(900, Number(process.env.MOVIE_API_TIMEOUT_MS || 2600));
-const FALLBACK_TIMEOUT_MS = Math.max(1200, Number(process.env.FALLBACK_MOVIE_API_TIMEOUT_MS || 3600));
+const UPSTREAM_TIMEOUT_MS = Math.max(900, Number(process.env.KKPHIM_API_TIMEOUT_MS || 2600));
 const RESPONSE_CACHE_MAX_ENTRIES = Math.max(50, Number(process.env.API_RESPONSE_CACHE_MAX_ENTRIES || 220));
 const responseCache = new Map();
 
@@ -113,11 +122,6 @@ function setMemoryCache(cacheKey, data, kind) {
     }
 }
 
-function buildFallbackUrl(primaryUrl) {
-    if (!FALLBACK_API_BASE_URL || FALLBACK_API_BASE_URL === API_BASE_URL) return null;
-    return new URL(`${FALLBACK_API_BASE_URL}${primaryUrl.pathname}${primaryUrl.search}`);
-}
-
 async function fetchJsonWithTimeout(targetUrl, timeoutMs) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -144,20 +148,7 @@ async function fetchJsonWithTimeout(targetUrl, timeoutMs) {
 }
 
 async function fetchUpstreamJson(primaryUrl) {
-    try {
-        return await fetchJsonWithTimeout(primaryUrl, UPSTREAM_TIMEOUT_MS);
-    } catch (primaryError) {
-        const fallbackUrl = buildFallbackUrl(primaryUrl);
-        const canFallback = fallbackUrl && (!primaryError.statusCode || primaryError.statusCode >= 500 || primaryError.name === 'AbortError');
-        if (!canFallback) throw primaryError;
-
-        try {
-            return await fetchJsonWithTimeout(fallbackUrl, FALLBACK_TIMEOUT_MS);
-        } catch (fallbackError) {
-            fallbackError.statusCode = fallbackError.statusCode || primaryError.statusCode;
-            throw fallbackError;
-        }
-    }
+    return fetchJsonWithTimeout(primaryUrl, UPSTREAM_TIMEOUT_MS);
 }
 
 function refreshMemoryCache(cacheKey, targetUrl, kind) {
@@ -430,19 +421,22 @@ async function handleClientApi(req, res, query) {
     }
 
     try {
-        const targetUrl = buildClientApiUrl(kind, query);
-        const cacheKey = targetUrl.pathname + targetUrl.search;
+        const cacheKey = `unified:${kind}:${Object.keys(query).filter(key => !['q', 'kind'].includes(key)).sort().map(key => `${key}=${query[key]}`).join('&')}`;
         const cached = getMemoryCache(cacheKey);
 
         if (cached) {
             applyClientCacheHeaders(res, kind);
             res.setHeader('X-QC-Cache', cached.state === 'fresh' ? 'HIT' : 'STALE');
-            if (cached.state === 'stale') refreshMemoryCache(cacheKey, targetUrl, kind);
+            if (cached.state === 'stale') {
+                fetchUnified(fetch, kind, query)
+                    .then(data => setMemoryCache(cacheKey, sanitizeUpstreamData(data), kind))
+                    .catch(error => console.warn('Client API background refresh failed:', error.message));
+            }
             sendJson(res, 200, cached.data);
             return;
         }
 
-        const data = sanitizeUpstreamData(await fetchUpstreamJson(targetUrl));
+        const data = sanitizeUpstreamData(await fetchUnified(fetch, kind, query));
         setMemoryCache(cacheKey, data, kind);
         applyClientCacheHeaders(res, kind);
         res.setHeader('X-QC-Cache', 'MISS');
@@ -498,17 +492,18 @@ async function handlePlayer(req, res, query) {
     try {
         const source = await resolveEpisodeSource(fetch, {
             slug: query.slug,
+            movieId: query.m,
             episodeIndex: query.ep,
             serverIndex: query.sv
         });
 
-        sendHtml(res, 200, renderPlayerHtml(source, query.slug, query.ep, query.sv));
+        sendHtml(res, 200, renderPlayerHtml(source, query.slug, query.ep, query.sv, query.m));
     } catch (error) {
         console.error('Player resolve error:', error.message);
         sendHtml(res, error.statusCode || 500, renderPlayerHtml({
             type: 'none',
             message: 'Phim hiện đang được cập nhật'
-        }, query.slug, query.ep, query.sv));
+        }, query.slug, query.ep, query.sv, query.m));
     }
 }
 
@@ -561,7 +556,7 @@ async function handleStream(req, res, query) {
         const targetUrl = verifySignedToken(query.t, 'stream');
         const upstreamHeaders = {
             Accept: '*/*',
-            Referer: 'https://ophim1.com/',
+            Referer: upstreamReferrer(targetUrl),
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         };
         if (req.headers.range) upstreamHeaders.Range = req.headers.range;

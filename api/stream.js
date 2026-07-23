@@ -10,6 +10,10 @@ const {
     verifySignedToken
 } = require('./_security');
 
+function upstreamReferrer() {
+    return 'https://www.kkphim2.com/';
+}
+
 module.exports = async (req, res) => {
     setSecurityHeaders(res, {
         cacheControl: 'private, no-store',
@@ -58,7 +62,7 @@ module.exports = async (req, res) => {
         const targetUrl = verifySignedToken(req.query.t, 'stream');
         const upstreamHeaders = {
             Accept: '*/*',
-            Referer: 'https://ophim1.com/',
+            Referer: upstreamReferrer(targetUrl),
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         };
         if (req.headers.range) upstreamHeaders.Range = req.headers.range;

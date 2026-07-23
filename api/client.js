@@ -1,7 +1,5 @@
 const {
-    API_BASE_URL,
     assertSecurityConfiguration,
-    buildClientApiUrl,
     checkRateLimit,
     getSecurityLockRetryAfter,
     isSameOriginRequest,
@@ -9,10 +7,8 @@ const {
     sanitizeUpstreamData,
     setSecurityHeaders
 } = require('./_security');
+const { fetchUnified } = require('./_providers');
 
-const FALLBACK_API_BASE_URL = (process.env.FALLBACK_MOVIE_API_BASE_URL || 'https://phimapi.com').replace(/\/+$/, '');
-const UPSTREAM_TIMEOUT_MS = Math.max(900, Number(process.env.MOVIE_API_TIMEOUT_MS || 2600));
-const FALLBACK_TIMEOUT_MS = Math.max(1200, Number(process.env.FALLBACK_MOVIE_API_TIMEOUT_MS || 3600));
 const RESPONSE_CACHE_MAX_ENTRIES = Math.max(50, Number(process.env.API_RESPONSE_CACHE_MAX_ENTRIES || 220));
 const responseCache = new Map();
 
@@ -27,18 +23,27 @@ const CLIENT_CACHE_BY_KIND = {
     h: { ttl: 600, stale: 300 },
     i: { ttl: 600, stale: 300 },
     j: { ttl: 86400, stale: 3600 },
-    k: { ttl: 86400, stale: 3600 }
+    k: { ttl: 86400, stale: 3600 },
+    l: { ttl: 86400, stale: 3600 },
+    m: { ttl: 21600, stale: 3600 },
+    n: { ttl: 21600, stale: 3600 }
 };
 
 function getClientCacheControl(kind) {
     const cache = CLIENT_CACHE_BY_KIND[String(kind || '')] || { ttl: 300, stale: 60 };
     const browserMaxAge = Math.min(cache.ttl, Math.max(60, Math.floor(cache.ttl / 2)));
-    return `public, max-age=${browserMaxAge}, s-maxage=${cache.ttl}, stale-while-revalidate=${cache.stale}`;
+    // This endpoint performs a same-origin check before returning catalogue
+    // data.  A shared CDN cache can serve a cached 200 response before the
+    // function runs, allowing a later cross-origin request to bypass that
+    // check. Keep short browser caching, but never cache this route publicly.
+    return `private, max-age=${browserMaxAge}, stale-while-revalidate=${cache.stale}`;
 }
 
 function getClientCdnCacheControl(kind) {
-    const cache = CLIENT_CACHE_BY_KIND[String(kind || '')] || { ttl: 300, stale: 60 };
-    return `public, s-maxage=${cache.ttl}, stale-while-revalidate=${cache.stale}`;
+    // See getClientCacheControl: the function-level cache and the client's
+    // local cache still avoid repeated upstream work without creating a CDN
+    // cache bypass for the request-origin guard.
+    return 'no-store';
 }
 
 function applyClientCacheHeaders(res, kind) {
@@ -46,6 +51,7 @@ function applyClientCacheHeaders(res, kind) {
     res.setHeader('Cache-Control', getClientCacheControl(kind));
     res.setHeader('CDN-Cache-Control', cdnCacheControl);
     res.setHeader('Vercel-CDN-Cache-Control', cdnCacheControl);
+    res.setHeader('Vary', 'Origin, Referer, Sec-Fetch-Site, Cookie');
 }
 
 function applyNoStoreHeaders(res) {
@@ -85,55 +91,16 @@ function setMemoryCache(cacheKey, data, kind) {
     }
 }
 
-function buildFallbackUrl(primaryUrl) {
-    if (!FALLBACK_API_BASE_URL || FALLBACK_API_BASE_URL === API_BASE_URL) return null;
-    return new URL(`${FALLBACK_API_BASE_URL}${primaryUrl.pathname}${primaryUrl.search}`);
+function getUnifiedCacheKey(kind, query) {
+    const entries = Object.keys(query || {})
+        .filter(key => !['q', 'kind'].includes(key))
+        .sort()
+        .map(key => `${key}=${Array.isArray(query[key]) ? query[key][0] : query[key]}`);
+    return `unified:${kind}:${entries.join('&')}`;
 }
 
-async function fetchJsonWithTimeout(url, timeoutMs) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-    try {
-        const response = await fetch(url.toString(), {
-            signal: controller.signal,
-            headers: {
-                Accept: 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-        });
-
-        if (!response.ok) {
-            const error = new Error(`Upstream error: ${response.status}`);
-            error.statusCode = response.status;
-            throw error;
-        }
-
-        return response.json();
-    } finally {
-        clearTimeout(timer);
-    }
-}
-
-async function fetchUpstreamJson(primaryUrl) {
-    try {
-        return await fetchJsonWithTimeout(primaryUrl, UPSTREAM_TIMEOUT_MS);
-    } catch (primaryError) {
-        const fallbackUrl = buildFallbackUrl(primaryUrl);
-        const canFallback = fallbackUrl && (!primaryError.statusCode || primaryError.statusCode >= 500 || primaryError.name === 'AbortError');
-        if (!canFallback) throw primaryError;
-
-        try {
-            return await fetchJsonWithTimeout(fallbackUrl, FALLBACK_TIMEOUT_MS);
-        } catch (fallbackError) {
-            fallbackError.statusCode = fallbackError.statusCode || primaryError.statusCode;
-            throw fallbackError;
-        }
-    }
-}
-
-function refreshMemoryCache(cacheKey, targetUrl, kind) {
-    fetchUpstreamJson(targetUrl)
+function refreshMemoryCache(cacheKey, kind, query) {
+    fetchUnified(fetch, kind, query)
         .then(data => setMemoryCache(cacheKey, sanitizeUpstreamData(data), kind))
         .catch(error => console.warn('Client API background refresh failed:', error.message));
 }
@@ -193,18 +160,17 @@ module.exports = async (req, res) => {
     }
 
     try {
-        const targetUrl = buildClientApiUrl(kind, req.query);
-        const cacheKey = targetUrl.pathname + targetUrl.search;
+        const cacheKey = getUnifiedCacheKey(kind, req.query);
         const cached = getMemoryCache(cacheKey);
 
         if (cached) {
             applyClientCacheHeaders(res, kind);
             res.setHeader('X-QC-Cache', cached.state === 'fresh' ? 'HIT' : 'STALE');
-            if (cached.state === 'stale') refreshMemoryCache(cacheKey, targetUrl, kind);
+            if (cached.state === 'stale') refreshMemoryCache(cacheKey, kind, req.query);
             return res.status(200).json(cached.data);
         }
 
-        const data = sanitizeUpstreamData(await fetchUpstreamJson(targetUrl));
+        const data = sanitizeUpstreamData(await fetchUnified(fetch, kind, req.query));
         setMemoryCache(cacheKey, data, kind);
         applyClientCacheHeaders(res, kind);
         res.setHeader('X-QC-Cache', 'MISS');

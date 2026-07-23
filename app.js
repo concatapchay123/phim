@@ -7,18 +7,21 @@
 // =========================================================================
 // Bump this whenever the shape or validity period of API data changes.  It
 // prevents stale localStorage entries from keeping expired signed image URLs.
-const API_CACHE_PREFIX = 'qc_cache_v7_';
-const OP_HOME = 'a';
-const OP_PHIM_BO = 'b';
-const OP_PHIM_LE = 'c';
-const OP_PHIM_CHIEU_RAP = 'd';
-const OP_SEARCH = 'e';
-const OP_DETAILS = 'f';
-const OP_IMAGES = 'g';
-const OP_GENRE = 'h';
-const OP_COUNTRY = 'i';
-const OP_GENRES = 'j';
-const OP_COUNTRIES = 'k';
+const API_CACHE_PREFIX = 'qc_cache_v11_';
+const KK_HOME = 'a';
+const KK_PHIM_BO = 'b';
+const KK_PHIM_LE = 'c';
+const KK_PHIM_CHIEU_RAP = 'd';
+const KK_SEARCH = 'e';
+const KK_DETAILS = 'f';
+const KK_IMAGES = 'g';
+const KK_GENRE = 'h';
+const KK_COUNTRY = 'i';
+const KK_GENRES = 'j';
+const KK_COUNTRIES = 'k';
+const KK_YEARS = 'l';
+const KK_PEOPLES = 'm';
+const KK_KEYWORDS = 'n';
 const ROUTE_CLIENT = String.fromCharCode(47, 97, 112, 105, 47, 99);
 const ROUTE_IMAGE = String.fromCharCode(47, 97, 112, 105, 47, 105);
 const ROUTE_PLAYER = String.fromCharCode(47, 97, 112, 105, 47, 112, 108, 97, 121, 101, 114);
@@ -189,6 +192,7 @@ const state = {
     gridKeyword: '',
     gridPage: 1,
     gridTotalPages: 1,
+    gridNextCursor: '',
     filters: {
         genre: '',
         country: '',
@@ -298,22 +302,22 @@ function shouldUsePassiveIntentPrefetch() {
 }
 
 function getApiCacheTTL(endpoint) {
-    if (endpoint === OP_GENRES || endpoint === OP_COUNTRIES) return API_CACHE_TTL.taxonomy;
-    if (endpoint === OP_DETAILS) return API_CACHE_TTL.detail;
-    if (endpoint === OP_IMAGES) return API_CACHE_TTL.images;
-    if (endpoint === OP_SEARCH) return API_CACHE_TTL.search;
-    if ([OP_HOME, OP_PHIM_BO, OP_PHIM_LE, OP_PHIM_CHIEU_RAP, OP_GENRE, OP_COUNTRY].includes(endpoint)) {
+    if (endpoint === KK_GENRES || endpoint === KK_COUNTRIES) return API_CACHE_TTL.taxonomy;
+    if (endpoint === KK_DETAILS) return API_CACHE_TTL.detail;
+    if (endpoint === KK_IMAGES) return API_CACHE_TTL.images;
+    if (endpoint === KK_SEARCH) return API_CACHE_TTL.search;
+    if ([KK_HOME, KK_PHIM_BO, KK_PHIM_LE, KK_PHIM_CHIEU_RAP, KK_GENRE, KK_COUNTRY].includes(endpoint)) {
         return API_CACHE_TTL.catalog;
     }
     return API_CACHE_TTL.default;
 }
 
 function getApiStaleTTL(endpoint) {
-    if (endpoint === OP_GENRES || endpoint === OP_COUNTRIES) return API_CACHE_STALE_TTL.taxonomy;
-    if (endpoint === OP_DETAILS) return API_CACHE_STALE_TTL.detail;
-    if (endpoint === OP_IMAGES) return API_CACHE_STALE_TTL.images;
-    if (endpoint === OP_SEARCH) return API_CACHE_STALE_TTL.search;
-    if ([OP_HOME, OP_PHIM_BO, OP_PHIM_LE, OP_PHIM_CHIEU_RAP, OP_GENRE, OP_COUNTRY].includes(endpoint)) {
+    if (endpoint === KK_GENRES || endpoint === KK_COUNTRIES) return API_CACHE_STALE_TTL.taxonomy;
+    if (endpoint === KK_DETAILS) return API_CACHE_STALE_TTL.detail;
+    if (endpoint === KK_IMAGES) return API_CACHE_STALE_TTL.images;
+    if (endpoint === KK_SEARCH) return API_CACHE_STALE_TTL.search;
+    if ([KK_HOME, KK_PHIM_BO, KK_PHIM_LE, KK_PHIM_CHIEU_RAP, KK_GENRE, KK_COUNTRY].includes(endpoint)) {
         return API_CACHE_STALE_TTL.catalog;
     }
     return API_CACHE_STALE_TTL.default;
@@ -450,11 +454,33 @@ function getCachedApiData(endpoint, params = {}, options = {}) {
     return readApiCache(cacheKey, options);
 }
 
-function createPlayerUrl(slug, episodeIndex = 0, serverIndex = 0) {
+function getMovieStorageId(movieOrSlug) {
+    return typeof movieOrSlug === 'object' && movieOrSlug
+        ? (movieOrSlug.movie_id || movieOrSlug.slug || '')
+        : String(movieOrSlug || '');
+}
+
+function getMovieSlug(movieOrSlug) {
+    return typeof movieOrSlug === 'object' && movieOrSlug ? String(movieOrSlug.slug || '') : String(movieOrSlug || '');
+}
+
+function movieApiParams(slug, movieId = '') {
+    return movieId ? { slug, m: movieId } : { slug };
+}
+
+function moviePageUrl(pageName, movieOrSlug, extra = {}) {
+    const params = new URLSearchParams({ slug: getMovieSlug(movieOrSlug), ...extra });
+    const movieId = typeof movieOrSlug === 'object' && movieOrSlug ? String(movieOrSlug.movie_id || '') : '';
+    if (movieId) params.set('m', movieId);
+    return `${pageName}?${params.toString()}`;
+}
+
+function createPlayerUrl(slug, episodeIndex = 0, serverIndex = 0, movieId = '') {
     const playerUrl = new URL(ROUTE_PLAYER, window.location.origin);
     playerUrl.searchParams.set('slug', slug);
     playerUrl.searchParams.set('ep', String(Math.max(0, Number.parseInt(episodeIndex, 10) || 0)));
     playerUrl.searchParams.set('sv', String(Math.max(0, Number.parseInt(serverIndex, 10) || 0)));
+    if (movieId) playerUrl.searchParams.set('m', movieId);
     return `${playerUrl.pathname}${playerUrl.search}`;
 }
 
@@ -467,11 +493,12 @@ function toPlaybackIndex(value, fallback = 0) {
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
-function getWatchProgress(slug) {
-    if (!slug) return null;
+function getWatchProgress(movieOrSlug, legacySlug = '') {
+    const key = getMovieStorageId(movieOrSlug);
+    if (!key) return null;
 
     try {
-        const saved = JSON.parse(localStorage.getItem(`watchProgress_${slug}`));
+        const saved = JSON.parse(localStorage.getItem(`watchProgress_${key}`) || (legacySlug ? localStorage.getItem(`watchProgress_${legacySlug}`) : 'null'));
         if (!saved || typeof saved !== 'object') return null;
 
         const time = Number(saved.time);
@@ -480,27 +507,31 @@ function getWatchProgress(slug) {
         return {
             episodeIndex: toPlaybackIndex(saved.ep),
             serverIndex: toPlaybackIndex(saved.sv),
-            time
+            time,
+            isSaved: true
         };
     } catch (error) {
         return null;
     }
 }
 
-function getResumePlayback(slug, fallbackEpisode = 0, fallbackServer = 0) {
-    const progress = getWatchProgress(slug);
+function getResumePlayback(movieOrSlug, fallbackEpisode = 0, fallbackServer = 0) {
+    const key = getMovieStorageId(movieOrSlug);
+    const slug = getMovieSlug(movieOrSlug);
+    const progress = getWatchProgress(key, slug);
     if (progress) return progress;
 
     // Older sessions only have watchHistory.  It still contains enough data
     // to restore the correct episode and server, even without a timestamp.
     try {
         const history = JSON.parse(localStorage.getItem('watchHistory')) || [];
-        const item = history.find(entry => entry && entry.slug === slug);
+        const item = history.find(entry => entry && (entry.movie_id === key || entry.slug === slug));
         if (item) {
             return {
                 episodeIndex: toPlaybackIndex(item.episodeIndex, fallbackEpisode),
                 serverIndex: toPlaybackIndex(item.serverIndex, fallbackServer),
-                time: 0
+                time: 0,
+                isSaved: true
             };
         }
     } catch (error) {
@@ -510,19 +541,25 @@ function getResumePlayback(slug, fallbackEpisode = 0, fallbackServer = 0) {
     return {
         episodeIndex: toPlaybackIndex(fallbackEpisode),
         serverIndex: toPlaybackIndex(fallbackServer),
-        time: 0
+        time: 0,
+        isSaved: false
     };
 }
 
-function createWatchPageUrl(slug, episodeIndex = null, serverIndex = null) {
+function createWatchPageUrl(movieOrSlug, episodeIndex = null, serverIndex = null) {
     const playback = episodeIndex === null || serverIndex === null
-        ? getResumePlayback(slug, episodeIndex ?? 0, serverIndex ?? 0)
+        ? getResumePlayback(movieOrSlug, episodeIndex ?? 0, serverIndex ?? 0)
         : {
             episodeIndex: toPlaybackIndex(episodeIndex),
-            serverIndex: toPlaybackIndex(serverIndex)
+            serverIndex: toPlaybackIndex(serverIndex),
+            isSaved: true
         };
 
-    return `xem-phim.html?slug=${encodeURIComponent(slug)}&ep=${playback.episodeIndex}&sv=${playback.serverIndex}`;
+    const params = { ep: playback.episodeIndex };
+    // A new session omits sv so the detail payload can choose a matching
+    // dubbed/voice-over server. Explicit and saved selections always win.
+    if (playback.isSaved) params.sv = playback.serverIndex;
+    return moviePageUrl('xem-phim.html', movieOrSlug, params);
 }
 
 function getEpisodeText(value = '') {
@@ -536,9 +573,39 @@ function isPlaceholderEpisode(episode) {
         !getEpisodeText(episode.filename);
 }
 
-function getMoviePlaybackState(movie, episodeIndex = 0, serverIndex = 0) {
+function normaliseLanguageText(value = '') {
+    return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+function hasExplicitServerSelection(value) {
+    return value !== undefined && value !== null && value !== '' && Number.isFinite(Number(value)) && Number(value) >= 0;
+}
+
+function getPreferredServerIndex(movie, requestedServerIndex = null) {
     const episodes = Array.isArray(movie?.episodes) ? movie.episodes : [];
-    const currentServer = episodes.length > serverIndex ? episodes[serverIndex] : null;
+    if (hasExplicitServerSelection(requestedServerIndex)) {
+        return Math.min(toPlaybackIndex(requestedServerIndex), Math.max(0, episodes.length - 1));
+    }
+
+    const language = normaliseLanguageText([
+        movie?.lang,
+        ...(Array.isArray(movie?.lang_key) ? movie.lang_key : [])
+    ].join(' '));
+    const preferredLabels = [];
+    if (/long tieng|longtieng|\bdub\b|\blt\b/.test(language)) preferredLabels.push(/long\s*tieng|longtieng|\bdub\b/i);
+    if (/thuyet minh|thuyetminh|\btm\b/.test(language)) preferredLabels.push(/thuyet\s*minh|thuyetminh|\btm\b/i);
+
+    for (const label of preferredLabels) {
+        const index = episodes.findIndex(server => label.test(normaliseLanguageText(server?.server_name)) && Array.isArray(server?.server_data) && server.server_data.length > 0);
+        if (index !== -1) return index;
+    }
+    return 0;
+}
+
+function getMoviePlaybackState(movie, episodeIndex = 0, serverIndex = null) {
+    const episodes = Array.isArray(movie?.episodes) ? movie.episodes : [];
+    const resolvedServerIndex = getPreferredServerIndex(movie, serverIndex);
+    const currentServer = episodes.length > resolvedServerIndex ? episodes[resolvedServerIndex] : null;
     const serverData = Array.isArray(currentServer?.server_data) ? currentServer.server_data : [];
     const currentEpisode = serverData.length > episodeIndex ? serverData[episodeIndex] : null;
     const hasEpisodeMetadata = episodes.some(server => {
@@ -548,6 +615,7 @@ function getMoviePlaybackState(movie, episodeIndex = 0, serverIndex = 0) {
 
     return {
         episodes,
+        serverIndex: resolvedServerIndex,
         currentServer,
         serverData,
         currentEpisode,
@@ -651,12 +719,12 @@ function warmMovieIntent(movie, options = {}) {
 
     const params = { slug: movie.slug };
     if (options.immediate) {
-        fetchAPI(OP_DETAILS, params);
-        if (options.includeTmdbImages) fetchAPI(OP_IMAGES, params);
+        fetchAPI(KK_DETAILS, params);
+        if (options.includeTmdbImages) fetchAPI(KK_IMAGES, params);
     } else {
-        queueApiPrefetch(OP_DETAILS, params, { priority: options.priority || 9 });
+        queueApiPrefetch(KK_DETAILS, params, { priority: options.priority || 9 });
         if (options.includeTmdbImages) {
-            queueApiPrefetch(OP_IMAGES, params, { priority: Math.max(1, (options.priority || 9) - 1) });
+            queueApiPrefetch(KK_IMAGES, params, { priority: Math.max(1, (options.priority || 9) - 1) });
         }
     }
 
@@ -1458,6 +1526,15 @@ const themeManager = {
 // =========================================================================
 // LOCALSTORAGE LIBRARY MANAGER (WATCHLIST & WATCH HISTORY)
 // =========================================================================
+function readLibraryArray(storageKey) {
+    try {
+        const value = JSON.parse(localStorage.getItem(storageKey) || '[]');
+        return Array.isArray(value) ? value : [];
+    } catch (_) {
+        return [];
+    }
+}
+
 const libraryManager = {
     init() {
         this.updateLibraryCounters();
@@ -1485,12 +1562,14 @@ const libraryManager = {
 
     // --- Watchlist ---
     getWatchlist() {
-        return JSON.parse(localStorage.getItem('watchlist')) || [];
+        return readLibraryArray('watchlist');
     },
     addToWatchlist(movie) {
         const watchlist = this.getWatchlist();
-        if (!watchlist.some(m => m.slug === movie.slug)) {
+        const movieId = getMovieStorageId(movie);
+        if (!watchlist.some(m => (m.movie_id || m.slug) === movieId)) {
             watchlist.unshift({
+                movie_id: movieId,
                 slug: movie.slug,
                 name: movie.name,
                 origin_name: movie.origin_name,
@@ -1505,25 +1584,29 @@ const libraryManager = {
             this.updateLibraryCounters();
         }
     },
-    removeFromWatchlist(slug) {
+    removeFromWatchlist(movieOrSlug) {
+        const movieId = getMovieStorageId(movieOrSlug);
         let watchlist = this.getWatchlist();
-        watchlist = watchlist.filter(m => m.slug !== slug);
+        watchlist = watchlist.filter(m => (m.movie_id || m.slug) !== movieId);
         localStorage.setItem('watchlist', JSON.stringify(watchlist));
         this.updateLibraryCounters();
     },
-    isInWatchlist(slug) {
-        return this.getWatchlist().some(m => m.slug === slug);
+    isInWatchlist(movieOrSlug) {
+        const movieId = getMovieStorageId(movieOrSlug);
+        return this.getWatchlist().some(m => (m.movie_id || m.slug) === movieId);
     },
 
     // --- Watch History ---
     getHistory() {
-        return JSON.parse(localStorage.getItem('watchHistory')) || [];
+        return readLibraryArray('watchHistory');
     },
     addToHistory(movie, epName, epIndex, serverIndex) {
         const history = this.getHistory();
-        const filteredHistory = history.filter(h => h.slug !== movie.slug);
+        const movieId = getMovieStorageId(movie);
+        const filteredHistory = history.filter(h => (h.movie_id || h.slug) !== movieId);
         
         filteredHistory.unshift({
+            movie_id: movieId,
             slug: movie.slug,
             name: movie.name,
             origin_name: movie.origin_name,
@@ -1540,10 +1623,11 @@ const libraryManager = {
         localStorage.setItem('watchHistory', JSON.stringify(filteredHistory));
         this.updateLibraryCounters();
     },
-    removeFromHistory(slug) {
+    removeFromHistory(movieOrSlug) {
+        const movieId = getMovieStorageId(movieOrSlug);
         let history = this.getHistory();
-        const removedItem = history.find(h => h.slug === slug);
-        history = history.filter(h => h.slug !== slug);
+        const removedItem = history.find(h => (h.movie_id || h.slug) === movieId);
+        history = history.filter(h => (h.movie_id || h.slug) !== movieId);
         localStorage.setItem('watchHistory', JSON.stringify(history));
         this.updateLibraryCounters();
         this.renderHistory();
@@ -1611,10 +1695,10 @@ const libraryManager = {
                 </div>
             `;
             row.querySelector('.history-btn-play').addEventListener('click', () => {
-                playMovieFromSlug(item.slug, item.episodeIndex, item.serverIndex);
+                playMovieFromSlug(item.slug, item.episodeIndex, item.serverIndex, item.movie_id || '');
             });
             row.querySelector('.history-btn-delete').addEventListener('click', () => {
-                libraryManager.removeFromHistory(item.slug);
+                libraryManager.removeFromHistory(item);
             });
             elements.historyList.appendChild(row);
         });
@@ -1849,14 +1933,14 @@ function closeMobileMenu() {
 // =========================================================================
 
 /**
- * Fetch and Render Homepage (RoPhim Row Layout)
+ * Fetch and Render Homepage (KKPhim Row Layout)
  */
 async function loadHomePage() {
     const homeRows = [
-        { endpoint: OP_HOME, params: { limit: 12 }, container: elements.rowPhimMoi },
-        { endpoint: OP_PHIM_LE, params: { limit: 12 }, container: elements.rowPhimLe },
-        { endpoint: OP_PHIM_BO, params: { limit: 12 }, container: elements.rowPhimBo },
-        { endpoint: OP_PHIM_CHIEU_RAP, params: { limit: 12 }, container: elements.rowPhimChieuRap }
+        { endpoint: KK_HOME, params: { limit: 12 }, container: elements.rowPhimMoi },
+        { endpoint: KK_PHIM_LE, params: { limit: 12 }, container: elements.rowPhimLe },
+        { endpoint: KK_PHIM_BO, params: { limit: 12 }, container: elements.rowPhimBo },
+        { endpoint: KK_PHIM_CHIEU_RAP, params: { limit: 12 }, container: elements.rowPhimChieuRap }
     ].filter(row => row.container);
 
     homeRows.forEach(row => {
@@ -1977,13 +2061,13 @@ function createMovieCardHTML(movie) {
 
     card.addEventListener('click', () => {
         warmMovieIntent(movie, { immediate: true, includeTmdbImages: true, withPosterImages: true });
-        navigateToPage(`phim.html?slug=${movie.slug}`);
+        navigateToPage(moviePageUrl('phim.html', movie));
     });
     card.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
             warmMovieIntent(movie, { immediate: true, includeTmdbImages: true, withPosterImages: true });
-            navigateToPage(`phim.html?slug=${movie.slug}`);
+            navigateToPage(moviePageUrl('phim.html', movie));
         }
     });
     if (shouldUsePassiveIntentPrefetch()) {
@@ -2099,7 +2183,7 @@ function setupHeroSection(movie) {
     changeHeroBackground(backdrop);
 
     if (PREFETCH_CONFIG.tmdbHeroBackdropEnabled) {
-        fetchAPI(OP_IMAGES, { slug: movie.slug }).then(imageData => {
+        fetchAPI(KK_IMAGES, { slug: movie.slug }).then(imageData => {
             if (imageData && imageData.data && imageData.data.images) {
                 const backdrops = imageData.data.images.filter(img => img.type === 'backdrop');
                 if (backdrops.length > 0) {
@@ -2118,7 +2202,7 @@ function setupHeroSection(movie) {
     elements.heroBtnPlay.onclick = (e) => {
         e.stopPropagation();
         warmMovieIntent(movie, { immediate: true });
-        navigateToPage(createWatchPageUrl(movie.slug));
+        navigateToPage(createWatchPageUrl(movie));
     };
     if (shouldUsePassiveIntentPrefetch()) {
         elements.heroBtnPlay.onmouseenter = () => {
@@ -2138,7 +2222,7 @@ function setupHeroSection(movie) {
 
     // Setup Favorite/Watchlist heart button on Hero
     if (elements.heroBtnFav) {
-        const inWatchlist = libraryManager.isInWatchlist(movie.slug);
+        const inWatchlist = libraryManager.isInWatchlist(movie);
         elements.heroBtnFav.classList.toggle('active', inWatchlist);
         const currentIcon = elements.heroBtnFav.querySelector('[data-lucide]') || elements.heroBtnFav.querySelector('i');
         if (currentIcon) currentIcon.setAttribute('data-lucide', inWatchlist ? 'heart-off' : 'heart');
@@ -2146,9 +2230,9 @@ function setupHeroSection(movie) {
 
         elements.heroBtnFav.onclick = (e) => {
             e.stopPropagation();
-            const nowInWatchlist = libraryManager.isInWatchlist(movie.slug);
+            const nowInWatchlist = libraryManager.isInWatchlist(movie);
             if (nowInWatchlist) {
-                libraryManager.removeFromWatchlist(movie.slug);
+                libraryManager.removeFromWatchlist(movie);
                 elements.heroBtnFav.classList.remove('active');
                 const currentIcon = elements.heroBtnFav.querySelector('[data-lucide]') || elements.heroBtnFav.querySelector('i');
                 if (currentIcon) currentIcon.setAttribute('data-lucide', 'heart');
@@ -2191,33 +2275,42 @@ async function loadFiltersData() {
     elements.filterCountry.innerHTML = '<option value="">Tất cả quốc gia</option>';
     elements.filterYear.innerHTML = '<option value="">Tất cả năm</option>';
 
-    Object.entries(GENRE_MAP).forEach(([slug, name]) => {
+    const [genreResponse, countryResponse, yearResponse] = await Promise.all([
+        fetchAPI(KK_GENRES),
+        fetchAPI(KK_COUNTRIES),
+        fetchAPI(KK_YEARS)
+    ]);
+    const genres = genreResponse?.data?.items?.length ? genreResponse.data.items : Object.entries(GENRE_MAP).map(([slug, name]) => ({ slug, name }));
+    const countries = countryResponse?.data?.items?.length ? countryResponse.data.items : Object.entries(COUNTRY_MAP).map(([slug, name]) => ({ slug, name }));
+    const years = yearResponse?.data?.items?.length ? yearResponse.data.items.map(item => item.year || item) : [];
+
+    genres.forEach(({ slug, name }) => {
         const opt = document.createElement('option');
         opt.value = slug;
         opt.textContent = name;
         elements.filterGenre.appendChild(opt);
     });
 
-    Object.entries(COUNTRY_MAP).forEach(([slug, name]) => {
+    countries.forEach(({ slug, name }) => {
         const opt = document.createElement('option');
         opt.value = slug;
         opt.textContent = name;
         elements.filterCountry.appendChild(opt);
     });
 
-    const currentYear = new Date().getFullYear();
-    for (let yr = currentYear; yr >= 2010; yr--) {
+    const availableYears = years.length ? years : Array.from({ length: new Date().getFullYear() - 2009 }, (_, index) => new Date().getFullYear() - index);
+    availableYears.forEach(yr => {
         const opt = document.createElement('option');
         opt.value = yr;
         opt.textContent = yr;
         elements.filterYear.appendChild(opt);
-    }
+    });
 }
 
 /**
  * Load Movie Grid with pagination
  */
-async function loadGrid(type, keyword = '', page = 1) {
+async function loadGrid(type, keyword = '', page = 1, cursor = '') {
     state.gridType = type;
     state.gridKeyword = keyword;
     state.gridPage = page;
@@ -2227,46 +2320,47 @@ async function loadGrid(type, keyword = '', page = 1) {
 
     let endpoint = '';
     let params = { page: page, limit: 24 };
+    if (cursor) params.cursor = cursor;
 
     // Determine query endpoint and params
     if (type === 'phim-bo') {
         elements.gridPageTitle.textContent = 'Phim Bộ';
-        endpoint = OP_PHIM_BO;
+        endpoint = KK_PHIM_BO;
     } else if (type === 'phim-le') {
         elements.gridPageTitle.textContent = 'Phim Lẻ';
-        endpoint = OP_PHIM_LE;
+        endpoint = KK_PHIM_LE;
     } else if (type === 'phim-chieu-rap') {
         elements.gridPageTitle.textContent = 'Phim Chiếu Rạp';
-        endpoint = OP_PHIM_CHIEU_RAP;
+        endpoint = KK_PHIM_CHIEU_RAP;
     } else if (type === 'phim-moi-cap-nhat') {
         elements.gridPageTitle.textContent = 'Phim Mới Cập Nhật';
-        endpoint = OP_HOME;
+        endpoint = KK_HOME;
     } else if (type === 'the-loai') {
         const displayName = GENRE_MAP[keyword] || keyword.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
         elements.gridPageTitle.textContent = `Thể loại: ${displayName}`;
-        endpoint = OP_GENRE;
+        endpoint = KK_GENRE;
         params.slug = keyword;
     } else if (type === 'quoc-gia') {
         const displayName = COUNTRY_MAP[keyword] || keyword.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
         elements.gridPageTitle.textContent = `Quốc gia: ${displayName}`;
-        endpoint = OP_COUNTRY;
+        endpoint = KK_COUNTRY;
         params.slug = keyword;
     } else if (type === 'search') {
         elements.gridPageTitle.textContent = `Kết Quả Tìm Kiếm: "${keyword}"`;
-        endpoint = OP_SEARCH;
+        endpoint = KK_SEARCH;
         params.keyword = keyword;
     } else if (type === 'filter') {
         elements.gridPageTitle.textContent = 'Bộ Lọc Phim';
         
         // Check if filtering by specific category/country slugs
         if (state.filters.genre) {
-            endpoint = OP_GENRE;
+            endpoint = KK_GENRE;
             params.slug = state.filters.genre;
         } else if (state.filters.country) {
-            endpoint = OP_COUNTRY;
+            endpoint = KK_COUNTRY;
             params.slug = state.filters.country;
         } else {
-            endpoint = OP_HOME;
+            endpoint = KK_HOME;
         }
         
         // Append additional filter fields as query parameters
@@ -2315,16 +2409,16 @@ function renderGridResponse(data, type, page, endpoint, params) {
             // Setup Pagination
             const pagin = data.data.params?.pagination;
             state.gridTotalPages = 1;
+            state.gridNextCursor = '';
             if (pagin) {
-                const totalItems = pagin.totalItems;
-                const itemsPerPage = pagin.totalItemsPerPage;
-                state.gridTotalPages = itemsPerPage ? Math.ceil(totalItems / itemsPerPage) : 1;
-                
-                if (state.gridTotalPages > 1) {
+                state.gridNextCursor = pagin.nextCursor || '';
+                const hasNext = Boolean(pagin.hasNext || state.gridNextCursor);
+                state.gridTotalPages = hasNext ? page + 1 : page;
+                if (hasNext || page > 1) {
                     elements.gridPagination.classList.remove('hidden');
-                    elements.gridPageInfo.textContent = `Trang ${page} / ${state.gridTotalPages}`;
+                    elements.gridPageInfo.textContent = `Trang ${page}`;
                     elements.gridPrevPage.disabled = page === 1;
-                    elements.gridNextPage.disabled = page === state.gridTotalPages;
+                    elements.gridNextPage.disabled = !hasNext;
                 }
             }
 
@@ -2353,15 +2447,15 @@ function queueListPagePrefetch(type, keyword = '', page = 1, priority = 8) {
     let endpoint = '';
     const params = { page, limit: 24 };
 
-    if (type === 'phim-bo') endpoint = OP_PHIM_BO;
-    else if (type === 'phim-le') endpoint = OP_PHIM_LE;
-    else if (type === 'phim-chieu-rap') endpoint = OP_PHIM_CHIEU_RAP;
-    else if (type === 'phim-moi-cap-nhat') endpoint = OP_HOME;
+    if (type === 'phim-bo') endpoint = KK_PHIM_BO;
+    else if (type === 'phim-le') endpoint = KK_PHIM_LE;
+    else if (type === 'phim-chieu-rap') endpoint = KK_PHIM_CHIEU_RAP;
+    else if (type === 'phim-moi-cap-nhat') endpoint = KK_HOME;
     else if (type === 'the-loai' && keyword) {
-        endpoint = OP_GENRE;
+        endpoint = KK_GENRE;
         params.slug = keyword;
     } else if (type === 'quoc-gia' && keyword) {
-        endpoint = OP_COUNTRY;
+        endpoint = KK_COUNTRY;
         params.slug = keyword;
     }
 
@@ -2419,9 +2513,9 @@ async function fetchMovieDetails(slug) {
     elements.modalBody.innerHTML = '';
     elements.closeModalBtn.focus();
 
-    const cachedData = getCachedApiData(OP_DETAILS, { slug }, { allowStale: true });
+    const cachedData = getCachedApiData(KK_DETAILS, { slug }, { allowStale: true });
     if (cachedData && cachedData.data && cachedData.data.item) {
-        const cachedImages = selectTmdbImages(getCachedApiData(OP_IMAGES, { slug }, { allowStale: true }));
+        const cachedImages = selectTmdbImages(getCachedApiData(KK_IMAGES, { slug }, { allowStale: true }));
         elements.modalLoading.classList.add('hidden');
         renderMovieDetails(cachedData.data.item, cachedImages.backdrop, cachedImages.poster);
         return;
@@ -2431,8 +2525,8 @@ async function fetchMovieDetails(slug) {
 
     // Parallel fetch for details and images
     const [data, imageData] = await Promise.all([
-        fetchAPI(OP_DETAILS, { slug }),
-        fetchAPI(OP_IMAGES, { slug })
+        fetchAPI(KK_DETAILS, { slug }),
+        fetchAPI(KK_IMAGES, { slug })
     ]);
     
     elements.modalLoading.classList.add('hidden');
@@ -2467,13 +2561,15 @@ function renderMovieDetails(movie, tmdbBackdrop = null, tmdbPoster = null) {
 
     const genres = movie.category ? movie.category.map(c => c.name).join(', ') : 'N/A';
     const countries = movie.country ? movie.country.map(c => c.name).join(', ') : 'N/A';
-    const actors = movie.actor && movie.actor[0] !== "" ? movie.actor.join(', ') : 'Đang cập nhật';
+    const peopleNames = Array.isArray(movie.people) ? movie.people.map(person => person?.name || person?.original_name).filter(Boolean) : [];
+    const actors = movie.actor && movie.actor[0] !== "" ? movie.actor.join(', ') : (peopleNames.join(', ') || 'Đang cập nhật');
+    const keywords = Array.isArray(movie.keywords) ? movie.keywords.map(keyword => keyword?.name || keyword).filter(Boolean).join(', ') : '';
     const directors = movie.director && movie.director[0] !== "" ? movie.director.join(', ') : 'Đang cập nhật';
     const description = movie.content || 'Nội dung đang được cập nhật.';
     const formattedDate = movie.modified?.time ? new Date(movie.modified.time).toLocaleDateString('vi-VN') : 'Đang cập nhật';
 
     // Check watchlist status
-    const inWatchlist = libraryManager.isInWatchlist(movie.slug);
+    const inWatchlist = libraryManager.isInWatchlist(movie);
     const watchBtnClass = inWatchlist ? 'watchlist-toggle-btn in-watchlist' : 'watchlist-toggle-btn';
     const watchBtnText = inWatchlist ? 'Đã lưu yêu thích' : 'Thêm vào yêu thích';
     const watchBtnIcon = inWatchlist ? 'check-circle-2' : 'heart';
@@ -2541,6 +2637,7 @@ function renderMovieDetails(movie, tmdbBackdrop = null, tmdbPoster = null) {
                         <span class="info-label">Diễn viên</span>
                         <span class="info-value">${escapeHTML(actors)}</span>
                     </div>
+                    ${keywords ? `<div class="info-row"><span class="info-label">Từ khóa</span><span class="info-value">${escapeHTML(keywords)}</span></div>` : ''}
                     <div class="info-row">
                         <span class="info-label">Cập nhật cuối</span>
                         <span class="info-value">${escapeHTML(formattedDate)}</span>
@@ -2554,16 +2651,16 @@ function renderMovieDetails(movie, tmdbBackdrop = null, tmdbPoster = null) {
 
     // Watchlist Favorite Button Action
     const watchlistToggleBtn = document.getElementById('watchlistToggleBtn');
-    setWatchlistButtonState(watchlistToggleBtn, inWatchlist, movie.slug);
+    setWatchlistButtonState(watchlistToggleBtn, inWatchlist, getMovieStorageId(movie));
     watchlistToggleBtn.addEventListener('click', () => {
-        const isFav = libraryManager.isInWatchlist(movie.slug);
+        const isFav = libraryManager.isInWatchlist(movie);
         if (isFav) {
-            libraryManager.removeFromWatchlist(movie.slug);
-            setWatchlistButtonState(watchlistToggleBtn, false, movie.slug);
+            libraryManager.removeFromWatchlist(movie);
+            setWatchlistButtonState(watchlistToggleBtn, false, getMovieStorageId(movie));
             showToast('Đã xóa khỏi tủ phim.', 'remove');
         } else {
             libraryManager.addToWatchlist(movie);
-            setWatchlistButtonState(watchlistToggleBtn, true, movie.slug);
+            setWatchlistButtonState(watchlistToggleBtn, true, getMovieStorageId(movie));
             showToast('Đã thêm vào tủ phim.', 'success');
         }
         lucide.createIcons();
@@ -2573,7 +2670,7 @@ function renderMovieDetails(movie, tmdbBackdrop = null, tmdbPoster = null) {
     const modalWatchBtn = document.getElementById('modalWatchBtn');
     modalWatchBtn.addEventListener('click', () => {
         closeModal();
-        const playback = getResumePlayback(movie.slug);
+        const playback = getResumePlayback(movie);
         playMovie(movie, playback.episodeIndex, playback.serverIndex);
     });
 
@@ -2651,9 +2748,9 @@ function closeModal() {
 /**
  * Open video player modal from slug and automatically resolve links
  */
-async function playMovieFromSlug(slug, episodeIndex = 0, serverIndex = 0) {
+async function playMovieFromSlug(slug, episodeIndex = 0, serverIndex = null, movieId = '') {
     if (!elements.playerModal) {
-        navigateToPage(`xem-phim.html?slug=${slug}&ep=${episodeIndex}&sv=${serverIndex}`);
+        navigateToPage(createWatchPageUrl({ slug, movie_id: movieId }, episodeIndex, serverIndex));
         return;
     }
     lastFocusedElement = document.activeElement;
@@ -2663,7 +2760,7 @@ async function playMovieFromSlug(slug, episodeIndex = 0, serverIndex = 0) {
     elements.playerBody.innerHTML = '<div class="loader" style="margin: 4rem auto;"></div>';
     elements.closePlayerBtn.focus();
 
-    const data = await fetchAPI(OP_DETAILS, { slug });
+    const data = await fetchAPI(KK_DETAILS, movieApiParams(slug, movieId));
 
     if (data && data.data && data.data.item) {
         playMovie(data.data.item, episodeIndex, serverIndex);
@@ -2676,7 +2773,7 @@ async function playMovieFromSlug(slug, episodeIndex = 0, serverIndex = 0) {
 /**
  * Handle player UI logic and episode switching through the server-side player
  */
-async function playMovie(movie, episodeIndex = 0, serverIndex = 0) {
+async function playMovie(movie, episodeIndex = 0, serverIndex = null) {
     if (!elements.playerModal.classList.contains('active')) {
         lastFocusedElement = document.activeElement;
     }
@@ -2686,9 +2783,10 @@ async function playMovie(movie, episodeIndex = 0, serverIndex = 0) {
     elements.playerBody.innerHTML = '<div class="loader" style="margin: 4rem auto;"></div>';
 
     const playback = getMoviePlaybackState(movie, episodeIndex, serverIndex);
+    serverIndex = playback.serverIndex;
     let { episodes, serverData, currentEpisode } = playback;
 
-    const playerUrl = !playback.isUnavailable ? createPlayerUrl(movie.slug, episodeIndex, serverIndex) : null;
+    const playerUrl = !playback.isUnavailable ? createPlayerUrl(movie.slug, episodeIndex, serverIndex, movie.movie_id) : null;
 
     const movieName = movie.name;
     const epName = playerUrl && currentEpisode?.name ? currentEpisode.name : (playerUrl ? `Tập ${episodeIndex + 1}` : PLAYER_UPDATE_MESSAGE);
@@ -2717,7 +2815,7 @@ async function playMovie(movie, episodeIndex = 0, serverIndex = 0) {
                 <h3 class="episode-title">Nguồn phát:</h3>
                 <div class="server-tabs">
                     ${episodes.map((server, idx) => `
-                        <button class="server-tab ${idx === serverIndex ? 'active' : ''}" onclick="changeEpisode('${movie.slug}', ${episodeIndex}, ${idx})">
+                        <button class="server-tab ${idx === serverIndex ? 'active' : ''}" onclick="changeEpisode('${movie.slug}', ${episodeIndex}, ${idx}, '${movie.movie_id || ''}')">
                             ${escapeHTML(server.server_name || `Server ${idx + 1}`)}
                         </button>
                     `).join('')}
@@ -2731,7 +2829,7 @@ async function playMovie(movie, episodeIndex = 0, serverIndex = 0) {
         html += `
             <div class="episode-section">
                 <h3 class="episode-title">Chọn Tập Phim:</h3>
-                ${generateEpisodesHTML(movie.slug, serverData, episodeIndex, serverIndex, 'button')}
+                ${generateEpisodesHTML(movie.slug, serverData, episodeIndex, serverIndex, 'button', movie.movie_id || '')}
             </div>
         `;
     }
@@ -2750,17 +2848,6 @@ async function playMovie(movie, episodeIndex = 0, serverIndex = 0) {
 
     lucide.createIcons();
 }
-
-/**
- * Switch episode directly from inside Player
- */
-window.changeEpisode = async (slug, epIndex, svIndex = 0) => {
-    elements.playerBody.innerHTML = '<div class="loader" style="margin: 4rem auto;"></div>';
-    const data = await fetchAPI(OP_DETAILS, { slug });
-    if (data && data.data && data.data.item) {
-        playMovie(data.data.item, epIndex, svIndex);
-    }
-};
 
 function closePlayerModal() {
     if (ENABLE_GSAP && window.gsap && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -2978,7 +3065,7 @@ function initDynamicPageEventListeners() {
             const keyword = chip.dataset.keyword;
             if (keyword) {
                 prefetchPageHTML('danh-sach.html');
-                queueApiPrefetch(OP_SEARCH, { keyword, page: 1, limit: 24 }, { priority: 7 });
+                queueApiPrefetch(KK_SEARCH, { keyword, page: 1, limit: 24 }, { priority: 7 });
             }
         };
         chip.addEventListener('click', () => {
@@ -3047,6 +3134,7 @@ function initDynamicPageEventListeners() {
             if (state.gridPage > 1) {
                 const currentUrl = new URL(window.location.href);
                 currentUrl.searchParams.set('page', state.gridPage - 1);
+                currentUrl.searchParams.delete('cursor');
                 prefetchLinkResources(currentUrl.pathname + currentUrl.search);
                 navigateToPage(currentUrl.pathname + currentUrl.search);
             }
@@ -3055,9 +3143,10 @@ function initDynamicPageEventListeners() {
 
     if (elements.gridNextPage) {
         elements.gridNextPage.addEventListener('click', () => {
-            if (state.gridPage < state.gridTotalPages) {
+            if (state.gridNextCursor || state.gridPage < state.gridTotalPages) {
                 const currentUrl = new URL(window.location.href);
                 currentUrl.searchParams.set('page', state.gridPage + 1);
+                if (state.gridNextCursor) currentUrl.searchParams.set('cursor', state.gridNextCursor);
                 prefetchLinkResources(currentUrl.pathname + currentUrl.search);
                 navigateToPage(currentUrl.pathname + currentUrl.search);
             }
@@ -3106,7 +3195,7 @@ function initGSAPAnimations() {
 }
 
 // =========================================================================
-// ROPHIM CUSTOM DYNAMIC UTILITIES & INTERACTIONS
+// KKPHIM CUSTOM DYNAMIC UTILITIES & INTERACTIONS
 // =========================================================================
 
 /**
@@ -3308,15 +3397,16 @@ const sessionManager = {
 // MULTI-PAGE CONTROLLERS
 // =========================================================================
 
-async function fetchMovieDetailsPage(slug) {
+async function fetchMovieDetailsPage(slug, movieId = '') {
     const detailsBody = document.getElementById('detailsBody');
     const detailsLoading = document.getElementById('detailsLoading');
     if (!detailsBody) return;
 
     detailsBody.innerHTML = '';
-    const cachedData = getCachedApiData(OP_DETAILS, { slug }, { allowStale: true });
+    const params = movieApiParams(slug, movieId);
+    const cachedData = getCachedApiData(KK_DETAILS, params, { allowStale: true });
     if (cachedData && cachedData.data && cachedData.data.item) {
-        const cachedImages = selectTmdbImages(getCachedApiData(OP_IMAGES, { slug }, { allowStale: true }));
+        const cachedImages = selectTmdbImages(getCachedApiData(KK_IMAGES, params, { allowStale: true }));
         if (detailsLoading) detailsLoading.classList.add('hidden');
         renderMovieDetailsPage(cachedData.data.item, cachedImages.backdrop, cachedImages.poster);
         return;
@@ -3325,14 +3415,18 @@ async function fetchMovieDetailsPage(slug) {
     if (detailsLoading) detailsLoading.classList.remove('hidden');
 
     // Parallel fetch for details and images
-    const [data, imageData] = await Promise.all([
-        fetchAPI(OP_DETAILS, { slug }),
-        fetchAPI(OP_IMAGES, { slug })
+    const [data, imageData, peopleData, keywordData] = await Promise.all([
+        fetchAPI(KK_DETAILS, params),
+        fetchAPI(KK_IMAGES, params),
+        fetchAPI(KK_PEOPLES, params),
+        fetchAPI(KK_KEYWORDS, params)
     ]);
 
     if (detailsLoading) detailsLoading.classList.add('hidden');
 
     if (data && data.data && data.data.item) {
+        data.data.item.people = peopleData?.data?.peoples || peopleData?.data?.people || [];
+        data.data.item.keywords = keywordData?.data?.keywords || [];
         let tmdbBackdrop = null;
         let tmdbPoster = null;
         if (imageData && imageData.data && imageData.data.images) {
@@ -3360,9 +3454,10 @@ function renderMovieDetailsPage(movie, tmdbBackdrop = null, tmdbPoster = null) {
     if (!detailsBody) return;
 
     const history = libraryManager.getHistory();
-    const movieHistory = history.find(h => h.slug === movie.slug);
+    const movieHistory = history.find(h => (h.movie_id || h.slug) === getMovieStorageId(movie));
     const lastEp = movieHistory ? movieHistory.episodeIndex : 0;
-    const lastSv = movieHistory ? movieHistory.serverIndex : 0;
+    const lastSv = movieHistory ? movieHistory.serverIndex : null;
+    const displayServerIndex = getPreferredServerIndex(movie, lastSv);
 
     const posterUrl = getImageUrl(tmdbPoster || movie.poster_url, 'assets/logo.png', { width: 900, quality: 82 });
     const thumbUrl = getImageUrl(tmdbBackdrop || movie.thumb_url || movie.poster_url, 'assets/logo.png', { width: 1280, quality: 76 });
@@ -3370,13 +3465,15 @@ function renderMovieDetailsPage(movie, tmdbBackdrop = null, tmdbPoster = null) {
 
     const genres = movie.category ? movie.category.map(c => c.name).join(', ') : 'N/A';
     const countries = movie.country ? movie.country.map(c => c.name).join(', ') : 'N/A';
-    const actors = movie.actor && movie.actor[0] !== "" ? movie.actor.join(', ') : 'Đang cập nhật';
+    const peopleNames = Array.isArray(movie.people) ? movie.people.map(person => person?.name || person?.original_name).filter(Boolean) : [];
+    const actors = movie.actor && movie.actor[0] !== "" ? movie.actor.join(', ') : (peopleNames.join(', ') || 'Đang cập nhật');
+    const keywords = Array.isArray(movie.keywords) ? movie.keywords.map(keyword => keyword?.name || keyword).filter(Boolean).join(', ') : '';
     const directors = movie.director && movie.director[0] !== "" ? movie.director.join(', ') : 'Đang cập nhật';
     const description = movie.content || 'Nội dung đang được cập nhật.';
     const formattedDate = movie.modified?.time ? new Date(movie.modified.time).toLocaleDateString('vi-VN') : 'Đang cập nhật';
 
     // Check watchlist status
-    const inWatchlist = libraryManager.isInWatchlist(movie.slug);
+    const inWatchlist = libraryManager.isInWatchlist(movie);
     const watchBtnClass = inWatchlist ? 'watchlist-toggle-btn in-watchlist' : 'watchlist-toggle-btn';
     const watchBtnText = inWatchlist ? 'Đã lưu yêu thích' : 'Thêm vào yêu thích';
     const watchBtnIcon = inWatchlist ? 'check-circle-2' : 'heart';
@@ -3395,7 +3492,7 @@ function renderMovieDetailsPage(movie, tmdbBackdrop = null, tmdbPoster = null) {
             episodesHtml += `
                 <div class="server-tabs" style="margin-bottom: 1.5rem;">
                     ${episodes.map((server, idx) => `
-                        <button class="server-tab ${idx === 0 ? 'active' : ''}" data-server-target="${idx}" onclick="switchDetailServer(this, ${idx})">
+                        <button class="server-tab ${idx === displayServerIndex ? 'active' : ''}" data-server-target="${idx}" onclick="switchDetailServer(this, ${idx})">
                             ${escapeHTML(server.server_name || `Server ${idx + 1}`)}
                         </button>
                     `).join('')}
@@ -3406,8 +3503,8 @@ function renderMovieDetailsPage(movie, tmdbBackdrop = null, tmdbPoster = null) {
         episodes.forEach((server, sIdx) => {
             const serverData = server.server_data || [];
             episodesHtml += `
-                <div class="detail-episode-grid ${sIdx === 0 ? '' : 'hidden'}" id="detailEpisodeGrid-${sIdx}">
-                    ${generateEpisodesHTML(movie.slug, serverData, -1, sIdx, 'link')}
+                <div class="detail-episode-grid ${sIdx === displayServerIndex ? '' : 'hidden'}" id="detailEpisodeGrid-${sIdx}">
+                    ${generateEpisodesHTML(movie.slug, serverData, -1, sIdx, 'link', movie.movie_id || '')}
                 </div>
             `;
         });
@@ -3448,7 +3545,7 @@ function renderMovieDetailsPage(movie, tmdbBackdrop = null, tmdbPoster = null) {
                     </div>
 
                     <div class="modal-actions-group">
-                        <a href="${createWatchPageUrl(movie.slug, lastEp, lastSv)}" class="btn btn-primary" style="text-decoration: none;">
+                        <a href="${movieHistory ? createWatchPageUrl(movie, lastEp, lastSv) : createWatchPageUrl(movie)}" class="btn btn-primary" style="text-decoration: none;">
                             <i data-lucide="play"></i> XEM PHIM
                         </a>
                         <button class="${watchBtnClass} btn" id="watchlistToggleBtn">
@@ -3495,16 +3592,16 @@ function renderMovieDetailsPage(movie, tmdbBackdrop = null, tmdbPoster = null) {
     // Watchlist Favorite Button Action
     const watchlistToggleBtn = document.getElementById('watchlistToggleBtn');
     if (watchlistToggleBtn) {
-        setWatchlistButtonState(watchlistToggleBtn, inWatchlist, movie.slug);
+        setWatchlistButtonState(watchlistToggleBtn, inWatchlist, getMovieStorageId(movie));
         watchlistToggleBtn.addEventListener('click', () => {
-            const isFav = libraryManager.isInWatchlist(movie.slug);
+            const isFav = libraryManager.isInWatchlist(movie);
             if (isFav) {
-                libraryManager.removeFromWatchlist(movie.slug);
-                setWatchlistButtonState(watchlistToggleBtn, false, movie.slug);
+                libraryManager.removeFromWatchlist(movie);
+                setWatchlistButtonState(watchlistToggleBtn, false, getMovieStorageId(movie));
                 showToast('Đã xóa khỏi tủ phim.', 'remove');
             } else {
                 libraryManager.addToWatchlist(movie);
-                setWatchlistButtonState(watchlistToggleBtn, true, movie.slug);
+                setWatchlistButtonState(watchlistToggleBtn, true, getMovieStorageId(movie));
                 showToast('Đã thêm vào tủ phim.', 'success');
             }
             lucide.createIcons();
@@ -3524,22 +3621,23 @@ window.switchDetailServer = (btn, svIdx) => {
 
 
 
-async function playMovieFromSlugPage(slug, episodeIndex = 0, serverIndex = 0) {
+async function playMovieFromSlugPage(slug, episodeIndex = 0, serverIndex = null, movieId = '') {
     const playerBody = document.getElementById('playerBody');
     if (!playerBody) return;
 
-    const cachedData = getCachedApiData(OP_DETAILS, { slug }, { allowStale: true });
+    const params = movieApiParams(slug, movieId);
+    const cachedData = getCachedApiData(KK_DETAILS, params, { allowStale: true });
     if (cachedData && cachedData.data && cachedData.data.item) {
-        const cachedImages = selectTmdbImages(getCachedApiData(OP_IMAGES, { slug }, { allowStale: true }));
+        const cachedImages = selectTmdbImages(getCachedApiData(KK_IMAGES, params, { allowStale: true }));
         renderMoviePlayerPage(cachedData.data.item, episodeIndex, serverIndex, cachedImages.backdrop);
         return;
     }
     
     playerBody.innerHTML = '<div class="loader" style="margin: 4rem auto;"></div>';
-    const data = await fetchAPI(OP_DETAILS, { slug });
+    const data = await fetchAPI(KK_DETAILS, params);
     
     if (data && data.data && data.data.item) {
-        const cachedImages = selectTmdbImages(getCachedApiData(OP_IMAGES, { slug }, { allowStale: true }));
+        const cachedImages = selectTmdbImages(getCachedApiData(KK_IMAGES, params, { allowStale: true }));
         const tmdbBackdrop = cachedImages.backdrop;
         renderMoviePlayerPage(data.data.item, episodeIndex, serverIndex, tmdbBackdrop);
     } else {
@@ -3554,14 +3652,15 @@ async function playMovieFromSlugPage(slug, episodeIndex = 0, serverIndex = 0) {
     }
 }
 
-async function renderMoviePlayerPage(movie, episodeIndex = 0, serverIndex = 0, tmdbBackdrop = null) {
+async function renderMoviePlayerPage(movie, episodeIndex = 0, serverIndex = null, tmdbBackdrop = null) {
     const playerBody = document.getElementById('playerBody');
     if (!playerBody) return;
 
     const playback = getMoviePlaybackState(movie, episodeIndex, serverIndex);
+    serverIndex = playback.serverIndex;
     let { episodes, serverData, currentEpisode } = playback;
 
-    const playerUrl = !playback.isUnavailable ? createPlayerUrl(movie.slug, episodeIndex, serverIndex) : null;
+    const playerUrl = !playback.isUnavailable ? createPlayerUrl(movie.slug, episodeIndex, serverIndex, movie.movie_id) : null;
 
     const movieName = movie.name;
     const epName = playerUrl && currentEpisode?.name ? currentEpisode.name : (playerUrl ? `Tập ${episodeIndex + 1}` : PLAYER_UPDATE_MESSAGE);
@@ -3601,7 +3700,7 @@ async function renderMoviePlayerPage(movie, episodeIndex = 0, serverIndex = 0, t
                 <h3 class="episode-title" style="font-size: 1.1rem; font-weight: 700; margin-bottom: 1rem;">Nguồn phát:</h3>
                 <div class="server-tabs">
                     ${episodes.map((server, idx) => `
-                        <button class="server-tab ${idx === serverIndex ? 'active' : ''}" onclick="changeEpisode('${movie.slug}', ${episodeIndex}, ${idx})">
+                        <button class="server-tab ${idx === serverIndex ? 'active' : ''}" onclick="changeEpisode('${movie.slug}', ${episodeIndex}, ${idx}, '${movie.movie_id || ''}')">
                             ${escapeHTML(server.server_name || `Server ${idx + 1}`)}
                         </button>
                     `).join('')}
@@ -3614,7 +3713,7 @@ async function renderMoviePlayerPage(movie, episodeIndex = 0, serverIndex = 0, t
         html += `
             <div class="episode-section" style="margin-top:2rem;">
                 <h3 class="episode-title" style="font-size: 1.1rem; font-weight: 700; margin-bottom: 1rem;">Chọn Tập Phim:</h3>
-                ${generateEpisodesHTML(movie.slug, serverData, episodeIndex, serverIndex, 'button')}
+                ${generateEpisodesHTML(movie.slug, serverData, episodeIndex, serverIndex, 'button', movie.movie_id || '')}
             </div>
         `;
     }
@@ -3627,8 +3726,16 @@ async function renderMoviePlayerPage(movie, episodeIndex = 0, serverIndex = 0, t
     lucide.createIcons();
 }
 
-window.changeEpisode = (slug, epIndex, svIndex = 0) => {
-    navigateToPage(`xem-phim.html?slug=${slug}&ep=${epIndex}&sv=${svIndex}`);
+window.changeEpisode = async (slug, epIndex, svIndex = 0, movieId = '') => {
+    const resolvedMovieId = movieId || new URL(window.location.href).searchParams.get('m') || '';
+    if (elements.playerModal?.classList.contains('active')) {
+        elements.playerBody.innerHTML = '<div class="loader" style="margin: 4rem auto;"></div>';
+        const data = await fetchAPI(KK_DETAILS, movieApiParams(slug, resolvedMovieId));
+        if (data?.data?.item) playMovie(data.data.item, epIndex, svIndex);
+        else showToast('Không thể tải tập phim đã chọn.', 'error');
+        return;
+    }
+    navigateToPage(moviePageUrl('xem-phim.html', { slug, movie_id: resolvedMovieId }, { ep: epIndex, sv: svIndex }));
 };
 
 function loadLibraryPage() {
@@ -3653,10 +3760,11 @@ function loadLibraryPage() {
 }
 
 // =========================================================================
-// ROPHIM EPISODE SELECTOR GROUPS/TABS HELPER
+// KKPHIM EPISODE SELECTOR GROUPS/TABS HELPER
 // =========================================================================
-function generateEpisodesHTML(movieSlug, serverData, activeEpIndex, serverIndex, mode = 'button') {
+function generateEpisodesHTML(movieSlug, serverData, activeEpIndex, serverIndex, mode = 'button', movieId = '') {
     if (!serverData || serverData.length === 0) return '';
+    const movieQuery = movieId ? `&m=${encodeURIComponent(movieId)}` : '';
 
     const totalEpisodes = serverData.length;
 
@@ -3669,13 +3777,13 @@ function generateEpisodesHTML(movieSlug, serverData, activeEpIndex, serverIndex,
                     const activeClass = idx === activeEpIndex ? 'active' : '';
                     if (mode === 'link') {
                         return `
-                            <a href="xem-phim.html?slug=${movieSlug}&ep=${idx}&sv=${serverIndex}" class="episode-btn ${activeClass}" style="text-decoration: none; text-align: center;">
+                            <a href="xem-phim.html?slug=${encodeURIComponent(movieSlug)}&ep=${idx}&sv=${serverIndex}${movieQuery}" class="episode-btn ${activeClass}" style="text-decoration: none; text-align: center;">
                                 ${escapeHTML(displayName)}
                             </a>
                         `;
                     } else {
                         return `
-                            <button class="episode-btn ${activeClass}" onclick="changeEpisode('${movieSlug}', ${idx}, ${serverIndex})">
+                            <button class="episode-btn ${activeClass}" onclick="changeEpisode('${movieSlug}', ${idx}, ${serverIndex}, '${movieId}')">
                                 ${escapeHTML(displayName)}
                             </button>
                         `;
@@ -3727,13 +3835,13 @@ function generateEpisodesHTML(movieSlug, serverData, activeEpIndex, serverIndex,
                     const activeClass = idx === activeEpIndex ? 'active' : '';
                     if (mode === 'link') {
                         return `
-                            <a href="xem-phim.html?slug=${movieSlug}&ep=${idx}&sv=${serverIndex}" class="episode-btn ${activeClass}" style="text-decoration: none; text-align: center;">
+                            <a href="xem-phim.html?slug=${encodeURIComponent(movieSlug)}&ep=${idx}&sv=${serverIndex}${movieQuery}" class="episode-btn ${activeClass}" style="text-decoration: none; text-align: center;">
                                 ${escapeHTML(displayName)}
                             </a>
                         `;
                     } else {
                         return `
-                            <button class="episode-btn ${activeClass}" onclick="changeEpisode('${movieSlug}', ${idx}, ${serverIndex})">
+                            <button class="episode-btn ${activeClass}" onclick="changeEpisode('${movieSlug}', ${idx}, ${serverIndex}, '${movieId}')">
                                 ${escapeHTML(displayName)}
                             </button>
                         `;
@@ -3891,34 +3999,34 @@ function initPrefetchSystem() {
     if (!PREFETCH_CONFIG.autoWarmOnLoad) return;
 
     // Warm the list pages users are most likely to open from the homepage/header.
-    queueApiPrefetch(OP_HOME, { page: 1, limit: 24 }, { priority: 7 });
-    queueApiPrefetch(OP_PHIM_BO, { page: 1, limit: 24 }, { priority: 6 });
-    queueApiPrefetch(OP_PHIM_LE, { page: 1, limit: 24 }, { priority: 6 });
-    queueApiPrefetch(OP_PHIM_CHIEU_RAP, { page: 1, limit: 24 }, { priority: 6 });
+    queueApiPrefetch(KK_HOME, { page: 1, limit: 24 }, { priority: 7 });
+    queueApiPrefetch(KK_PHIM_BO, { page: 1, limit: 24 }, { priority: 6 });
+    queueApiPrefetch(KK_PHIM_LE, { page: 1, limit: 24 }, { priority: 6 });
+    queueApiPrefetch(KK_PHIM_CHIEU_RAP, { page: 1, limit: 24 }, { priority: 6 });
 
     for (let p = 2; p <= 1 + PREFETCH_CONFIG.gridPagesAhead; p++) {
-        queueApiPrefetch(OP_HOME, { page: p, limit: 24 }, { priority: 8 });
+        queueApiPrefetch(KK_HOME, { page: p, limit: 24 }, { priority: 8 });
     }
 
     document.querySelectorAll('.deck-card[data-genre]').forEach((card, index) => {
         if (index < PREFETCH_CONFIG.homeDeckPreviewLimit) {
-            queueApiPrefetch(OP_GENRE, { slug: card.getAttribute('data-genre'), page: 1, limit: 24 }, { priority: 5 });
+            queueApiPrefetch(KK_GENRE, { slug: card.getAttribute('data-genre'), page: 1, limit: 24 }, { priority: 5 });
         }
     });
 
     // Warm only the first visible menu destinations. The rest are fetched on hover/touch/focus.
-    fetchAPI(OP_GENRES).then(resGenres => {
+    fetchAPI(KK_GENRES).then(resGenres => {
         if (resGenres && resGenres.data && resGenres.data.items) {
             resGenres.data.items.slice(0, PREFETCH_CONFIG.dropdownPreviewLimit).forEach(g => {
-                queueApiPrefetch(OP_GENRE, { slug: g.slug, page: 1, limit: 24 }, { priority: 3 });
+                queueApiPrefetch(KK_GENRE, { slug: g.slug, page: 1, limit: 24 }, { priority: 3 });
             });
         }
     }).catch(e => console.warn('Genres prefetch error:', e));
 
-    fetchAPI(OP_COUNTRIES).then(resCountries => {
+    fetchAPI(KK_COUNTRIES).then(resCountries => {
         if (resCountries && resCountries.data && resCountries.data.items) {
             resCountries.data.items.slice(0, PREFETCH_CONFIG.dropdownPreviewLimit).forEach(c => {
-                queueApiPrefetch(OP_COUNTRY, { slug: c.slug, page: 1, limit: 24 }, { priority: 3 });
+                queueApiPrefetch(KK_COUNTRY, { slug: c.slug, page: 1, limit: 24 }, { priority: 3 });
             });
         }
     }).catch(e => console.warn('Countries prefetch error:', e));
@@ -4006,10 +4114,10 @@ function prefetchLinkResources(urlStr) {
         const params = targetUrl.searchParams;
 
         if (pageName === '' || pageName === 'index') {
-            queueApiPrefetch(OP_HOME, { page: 1, limit: 12 }, { priority: 8 });
-            queueApiPrefetch(OP_PHIM_LE, { page: 1, limit: 12 }, { priority: 7 });
-            queueApiPrefetch(OP_PHIM_BO, { page: 1, limit: 12 }, { priority: 7 });
-            queueApiPrefetch(OP_PHIM_CHIEU_RAP, { page: 1, limit: 12 }, { priority: 7 });
+            queueApiPrefetch(KK_HOME, { page: 1, limit: 12 }, { priority: 8 });
+            queueApiPrefetch(KK_PHIM_LE, { page: 1, limit: 12 }, { priority: 7 });
+            queueApiPrefetch(KK_PHIM_BO, { page: 1, limit: 12 }, { priority: 7 });
+            queueApiPrefetch(KK_PHIM_CHIEU_RAP, { page: 1, limit: 12 }, { priority: 7 });
         } else if (pageName === 'danh-sach') {
             const type = params.get('type') || 'phim-moi-cap-nhat';
             const keyword = params.get('keyword') || '';
@@ -4018,19 +4126,19 @@ function prefetchLinkResources(urlStr) {
             let endpoint = '';
             let apiParams = { page: page, limit: 24 };
 
-            if (type === 'phim-bo') endpoint = OP_PHIM_BO;
-            else if (type === 'phim-le') endpoint = OP_PHIM_LE;
-            else if (type === 'phim-chieu-rap') endpoint = OP_PHIM_CHIEU_RAP;
-            else if (type === 'phim-moi-cap-nhat') endpoint = OP_HOME;
+            if (type === 'phim-bo') endpoint = KK_PHIM_BO;
+            else if (type === 'phim-le') endpoint = KK_PHIM_LE;
+            else if (type === 'phim-chieu-rap') endpoint = KK_PHIM_CHIEU_RAP;
+            else if (type === 'phim-moi-cap-nhat') endpoint = KK_HOME;
             else if (type === 'the-loai') {
-                endpoint = OP_GENRE;
+                endpoint = KK_GENRE;
                 apiParams.slug = keyword;
             } else if (type === 'quoc-gia') {
-                endpoint = OP_COUNTRY;
+                endpoint = KK_COUNTRY;
                 apiParams.slug = keyword;
             }
             else if (type === 'search') {
-                endpoint = OP_SEARCH;
+                endpoint = KK_SEARCH;
                 apiParams.keyword = keyword;
             } else if (type === 'filter') {
                 const genre = params.get('genre') || '';
@@ -4039,13 +4147,13 @@ function prefetchLinkResources(urlStr) {
                 const sort = params.get('sort') || 'modified.time';
                 
                 if (genre) {
-                    endpoint = OP_GENRE;
+                    endpoint = KK_GENRE;
                     apiParams.slug = genre;
                 } else if (country) {
-                    endpoint = OP_COUNTRY;
+                    endpoint = KK_COUNTRY;
                     apiParams.slug = country;
                 } else {
-                    endpoint = OP_HOME;
+                    endpoint = KK_HOME;
                 }
                 
                 apiParams.sort_field = sort;
@@ -4060,8 +4168,8 @@ function prefetchLinkResources(urlStr) {
         } else if (pageName === 'phim' || pageName === 'xem-phim') {
             const slug = params.get('slug');
             if (slug) {
-                queueApiPrefetch(OP_DETAILS, { slug }, { priority: 10 });
-                queueApiPrefetch(OP_IMAGES, { slug }, { priority: 9 });
+                queueApiPrefetch(KK_DETAILS, { slug }, { priority: 10 });
+                queueApiPrefetch(KK_IMAGES, { slug }, { priority: 9 });
             }
         }
     } catch (e) {
@@ -4327,6 +4435,7 @@ function runPageRouting(url) {
         const type = urlParams.get('type') || 'phim-moi-cap-nhat';
         const keyword = urlParams.get('keyword') || '';
         const page = parseInt(urlParams.get('page')) || 1;
+        const cursor = urlParams.get('cursor') || '';
         
         if (type === 'phim-bo') highlightNav(elements.navPhimBo);
         else if (type === 'phim-le') highlightNav(elements.navPhimLe);
@@ -4338,14 +4447,15 @@ function runPageRouting(url) {
 
         return Promise.allSettled([
             loadFiltersData(),
-            loadGrid(type, keyword, page)
+            loadGrid(type, keyword, page, cursor)
         ]);
     } else if (isDetailPage) {
         const urlParams = url.searchParams;
         const slug = urlParams.get('slug');
+        const movieId = urlParams.get('m') || '';
         highlightNav(null);
         if (slug) {
-            return fetchMovieDetailsPage(slug);
+            return fetchMovieDetailsPage(slug, movieId);
         } else {
             showToast('Không tìm thấy thông tin phim!', 'error');
             setTimeout(() => navigateToPage('index.html'), 2000);
@@ -4353,20 +4463,22 @@ function runPageRouting(url) {
     } else if (isWatchPage) {
         const urlParams = url.searchParams;
         const slug = urlParams.get('slug');
+        const movieId = urlParams.get('m') || '';
         const hasEpisodeInUrl = urlParams.has('ep');
         const hasServerInUrl = urlParams.has('sv');
         const resumePlayback = slug && (!hasEpisodeInUrl || !hasServerInUrl)
-            ? getResumePlayback(slug)
+            ? getResumePlayback({ slug, movie_id: movieId })
             : null;
-        const epIndex = resumePlayback
+        const useResumePlayback = Boolean(resumePlayback?.isSaved);
+        const epIndex = useResumePlayback
             ? resumePlayback.episodeIndex
             : toPlaybackIndex(urlParams.get('ep'));
-        const svIndex = resumePlayback
+        const svIndex = useResumePlayback
             ? resumePlayback.serverIndex
-            : toPlaybackIndex(urlParams.get('sv'));
+            : (hasServerInUrl ? toPlaybackIndex(urlParams.get('sv')) : null);
         highlightNav(null);
         if (slug) {
-            return playMovieFromSlugPage(slug, epIndex, svIndex);
+            return playMovieFromSlugPage(slug, epIndex, svIndex, movieId);
         } else {
             showToast('Không tìm thấy thông tin phim!', 'error');
             setTimeout(() => navigateToPage('index.html'), 2000);

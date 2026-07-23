@@ -6,6 +6,7 @@ Set these in Vercel Project Settings > Environment Variables:
 
 - `PLAYER_TOKEN_SECRET`: random secret of at least 32 characters. Required in production; do not reuse a JWT or application secret.
 - `SECURITY_LOCK_SECRET`: a different random secret of at least 32 characters. Required in production.
+- `MOVIE_ID_SECRET`: optional separate random secret used to encrypt opaque movie identifiers. If omitted, the application derives this key from `PLAYER_TOKEN_SECRET` for backwards-compatible deployment.
 - `ENABLE_STREAM_PROXY`: leave unset or `false` unless you intentionally want video traffic to pass through Vercel Functions.
 - `ENABLE_IMAGE_PROXY`: leave unset or `false` unless you intentionally want image traffic to pass through Vercel Functions.
 - `ENABLE_LEGACY_PROXY`: leave unset or `false`.

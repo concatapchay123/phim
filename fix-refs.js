@@ -1,10 +1,20 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const files = ['index.min.html', 'danh-sach.min.html', 'phim.min.html', 'xem-phim.min.html', 'tu-phim.min.html', 'security-locked.min.html'];
-const appVersion = '1.1.3';
-const styleVersion = '1.0.19';
-const iconVersion = '1.0.0';
+
+function contentVersion(filename) {
+    const contents = fs.readFileSync(path.join(__dirname, filename));
+    return crypto.createHash('sha256').update(contents).digest('hex').slice(0, 16);
+}
+
+// The files are served with a one-year immutable cache header.  The content
+// hash in the query string keeps that cache efficient while making every new
+// build visible immediately when an asset changes.
+const appVersion = contentVersion('app.min.js');
+const styleVersion = contentVersion('style.min.css');
+const iconVersion = contentVersion('assets/icons.min.js');
 
 files.forEach(file => {
     const htmlFile = path.join(__dirname, file);

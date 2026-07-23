@@ -1,4 +1,4 @@
-# Source files - do not deploy to production
+# Source files and operational artifacts - do not deploy to production
 app.js
 style.css
 assets/icons.js
@@ -14,10 +14,17 @@ detail.json
 DESIGN.md
 PRODUCT.md
 SECURITY_HARDENING.md
+HUONG_DAN_API_KKPHIM.md
 package.json
 package-lock.json
 node_modules
+test
 *.map
+*.md
+*.log
+*.bat
+.env
+.env.*
 .gitignore
 build.bat
 fix-refs.js
