@@ -8,6 +8,10 @@ const LOCAL_PLAYER_TOKEN_SECRET = 'quanchill-local-player-secret-change-me';
 const LOCAL_SECURITY_LOCK_SECRET = 'quanchill-local-security-lock-secret-change-me';
 const PLAYER_TOKEN_SECRET = process.env.PLAYER_TOKEN_SECRET || (IS_PRODUCTION ? '' : LOCAL_PLAYER_TOKEN_SECRET);
 const PLAYER_TOKEN_TTL_SECONDS = Math.max(30, Number(process.env.PLAYER_TOKEN_TTL_SECONDS || 300));
+// Third-party embed players can expose their own branding, diagnostics and
+// source URLs. Keep them disabled by default; enabling this is an explicit
+// compatibility trade-off, not a security feature.
+const ALLOW_EXTERNAL_EMBED_FALLBACK = process.env.ALLOW_EXTERNAL_EMBED_FALLBACK === 'true';
 const HLS_VALIDATION_TIMEOUT_MS = Math.max(800, Number(process.env.HLS_VALIDATION_TIMEOUT_MS || 2200));
 // API responses may be kept in the browser cache for up to 15 days.  Keep image
 // links valid longer than that window so a cached catalogue never contains
@@ -795,7 +799,7 @@ async function finalizeEpisodeSource(fetchImpl, candidate) {
             };
         }
 
-        if (candidate.embedUrl) {
+        if (candidate.embedUrl && ALLOW_EXTERNAL_EMBED_FALLBACK) {
             return {
                 ...candidate,
                 url: candidate.embedUrl,
@@ -812,7 +816,7 @@ async function finalizeEpisodeSource(fetchImpl, candidate) {
         };
     }
 
-    if (candidate.embedUrl) {
+    if (candidate.embedUrl && ALLOW_EXTERNAL_EMBED_FALLBACK) {
         return {
             ...candidate,
             url: candidate.embedUrl,
@@ -899,7 +903,7 @@ function renderPlayerHtml(source = {}, slug, epIndex, svIndex, movieId = '') {
                 (function () {
                     var video = document.getElementById('moviePlayer');
                     var source = ${JSON.stringify(streamUrl)};
-                    var embedFallback = ${JSON.stringify(source.embedUrl || '')};
+                    var embedFallback = ${JSON.stringify(ALLOW_EXTERNAL_EMBED_FALLBACK ? (source.embedUrl || '') : '')};
                     var slug = ${JSON.stringify(slug || '')};
                     var movieKey = ${JSON.stringify(movieId || slug || '')};
                     var ep = ${JSON.stringify(epIndex !== undefined ? String(epIndex) : '')};
@@ -940,10 +944,10 @@ function renderPlayerHtml(source = {}, slug, epIndex, svIndex, movieId = '') {
                         frame.id = 'embedPlayer';
                         frame.src = embedFallback;
                         frame.title = ${JSON.stringify(title)};
-                        frame.allow = 'autoplay; fullscreen; encrypted-media; picture-in-picture';
-                        frame.allowFullscreen = true;
+                        frame.allow = 'autoplay';
+                        frame.allowFullscreen = false;
                         frame.referrerPolicy = 'no-referrer';
-                        frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-presentation');
+                        frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms');
                         frame.addEventListener('load', postReady);
                         video.replaceWith(frame);
                         return true;
@@ -1107,14 +1111,13 @@ function renderPlayerHtml(source = {}, slug, epIndex, svIndex, movieId = '') {
                 }());
             </script>
         `;
-    } else if (source.url) {
+    } else if (source.url && source.type === 'embed' && ALLOW_EXTERNAL_EMBED_FALLBACK) {
         playerMarkup = `
             <iframe id="embedPlayer" src="${escapeAttr(source.url)}"
                 title="${safeTitle}"
-                allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-                allowfullscreen
+                allow="autoplay"
                 referrerpolicy="no-referrer"
-                sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"></iframe>
+                sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
         `;
         scriptMarkup = `
             <script>

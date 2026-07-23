@@ -10,6 +10,7 @@ Set these in Vercel Project Settings > Environment Variables:
 - `ENABLE_STREAM_PROXY`: leave unset or `false` unless you intentionally want video traffic to pass through Vercel Functions.
 - `ENABLE_IMAGE_PROXY`: leave unset or `false` unless you intentionally want image traffic to pass through Vercel Functions.
 - `ENABLE_LEGACY_PROXY`: leave unset or `false`.
+- `ALLOW_EXTERNAL_EMBED_FALLBACK`: leave unset or `false`. When enabled, films without a direct HLS stream may open a third-party iframe player, which can display that provider's own domain and diagnostics.
 
 The application deliberately fails closed for signed image/stream URLs and the
 server-side security lock when these secrets are not configured in production.
@@ -47,6 +48,11 @@ Use Vercel Firewall before application code. Suggested starting rules:
 
 ## Quota notes
 
-Video proxying is the largest quota risk. A single 10 minute playback can transfer gigabytes if HLS segments are relayed through `/api/stream`. The default configuration now plays HLS directly from the upstream source and falls back to embed playback when direct HLS fails.
+Video proxying is the largest quota risk. A single 10 minute playback can transfer gigabytes if HLS segments are relayed through `/api/stream`. The default configuration plays HLS directly from the upstream source and never falls back to an external embed unless explicitly enabled.
+
+External iframe fallback is disabled by default. This prevents an external
+player from taking fullscreen and displaying its own URL/technical overlay,
+but a film available only through an external embed will be unavailable until
+you provide an approved direct HLS/DRM source.
 
 Image proxying also consumes Function and Fast Origin Transfer quota. The default configuration now returns direct image URLs from allowed image hosts.

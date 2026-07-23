@@ -125,6 +125,34 @@ test('the player resolves exactly the KKPhim episode and reports unavailable con
     );
 });
 
+test('an external embed-only episode is rejected when secure embed fallback is disabled', async () => {
+    const fetchEmbedOnly = async () => ({
+        ok: true,
+        json: async () => ({
+            status: 'success',
+            data: { item: {
+                slug: 'embed-only-film', name: 'Embed only', episodes: [{ server_name: 'Vietsub', server_data: [
+                    { name: 'Episode 1', link_embed: 'https://player.example.test/embed/1' }
+                ] }]
+            } }
+        })
+    });
+
+    await assert.rejects(
+        resolveEpisodeSource(fetchEmbedOnly, { slug: 'embed-only-film', episodeIndex: 0, serverIndex: 0 }),
+        { statusCode: 404 }
+    );
+});
+
+test('player HTML never renders an external iframe when fallback is disabled', () => {
+    const html = renderPlayerHtml({
+        url: 'https://player.example.test/embed/1', type: 'embed', movieName: 'Embed only', episodeName: 'Episode 1'
+    }, 'embed-only-film', 0, 0, 'opaque-id');
+
+    assert.doesNotMatch(html, /player\.example\.test/);
+    assert.doesNotMatch(html, /allowfullscreen|allow-presentation/);
+});
+
 test('the player prefers a matching dubbed or voice-over server when none is selected', async () => {
     const movie = {
         slug: 'dubbed-film', name: 'Dubbed film', lang: 'Vietsub + Lồng Tiếng', lang_key: ['vs', 'lt'],
