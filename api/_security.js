@@ -8,7 +8,6 @@ const LOCAL_PLAYER_TOKEN_SECRET = 'quanchill-local-player-secret-change-me';
 const LOCAL_SECURITY_LOCK_SECRET = 'quanchill-local-security-lock-secret-change-me';
 const PLAYER_TOKEN_SECRET = process.env.PLAYER_TOKEN_SECRET || (IS_PRODUCTION ? '' : LOCAL_PLAYER_TOKEN_SECRET);
 const PLAYER_TOKEN_TTL_SECONDS = Math.max(30, Number(process.env.PLAYER_TOKEN_TTL_SECONDS || 300));
-const HLS_VALIDATION_TIMEOUT_MS = Math.max(800, Number(process.env.HLS_VALIDATION_TIMEOUT_MS || 2200));
 // API responses may be kept in the browser cache for up to 15 days.  Keep image
 // links valid longer than that window so a cached catalogue never contains
 // already-expired image URLs.
@@ -751,32 +750,6 @@ function pickEpisodeSource(episodes, episodeIndex, serverIndex, provider = 'kkph
     return null;
 }
 
-async function canProxyHlsSource(fetchImpl, urlValue, provider = 'kkphim') {
-    if (!isAbsoluteHttpUrl(urlValue)) return false;
-
-    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timer = controller ? setTimeout(() => controller.abort(), HLS_VALIDATION_TIMEOUT_MS) : null;
-
-    try {
-        const response = await fetchImpl(urlValue, {
-            method: 'GET',
-            signal: controller?.signal,
-            headers: {
-                Accept: 'application/vnd.apple.mpegurl, application/x-mpegURL, */*',
-                Range: 'bytes=0-65535',
-                Referer: PROVIDERS[provider]?.referrer || PROVIDERS.kkphim.referrer,
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-        });
-
-        return response.ok;
-    } catch (error) {
-        return false;
-    } finally {
-        if (timer) clearTimeout(timer);
-    }
-}
-
 async function finalizeEpisodeSource(fetchImpl, candidate) {
     if (!candidate) return null;
 
@@ -785,16 +758,14 @@ async function finalizeEpisodeSource(fetchImpl, candidate) {
         // compatibility fallback when the private stream proxy is disabled.
         if (!ENABLE_STREAM_PROXY) return null;
 
-        const canProxyHls = await canProxyHlsSource(fetchImpl, candidate.hlsUrl, candidate.provider);
-        if (canProxyHls) {
-            return {
-                ...candidate,
-                url: candidate.hlsUrl,
-                type: 'hls'
-            };
-        }
-
-        return null;
+        // Do not probe the source here. A short preflight check is prone to
+        // false negatives in serverless regions, while the signed stream
+        // route below performs the actual request with the same protections.
+        return {
+            ...candidate,
+            url: candidate.hlsUrl,
+            type: 'hls'
+        };
     }
 
     return null;

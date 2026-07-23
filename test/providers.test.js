@@ -164,7 +164,7 @@ test('the player resolves exactly the KKPhim episode and reports unavailable con
     assert.equal(source.url, 'https://stream.example.test/test.m3u8');
     assert.equal(source.provider, 'kkphim');
     assert.equal(new URL(calls[0]).origin, 'https://phimapi.com');
-    assert.ok(calls.some(url => new URL(url).origin === 'https://stream.example.test'));
+    assert.ok(calls.every(url => new URL(url).origin === 'https://phimapi.com'));
 
     await assert.rejects(
         resolveEpisodeSource(async () => ({ ok: true, json: async () => ({ status: 'success', data: { item: { slug: 'empty-film', episodes: [] } } }) }), {
