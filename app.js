@@ -7,7 +7,10 @@
 // =========================================================================
 // Bump this whenever the shape or validity period of API data changes.  It
 // prevents stale localStorage entries from keeping expired signed image URLs.
-const API_CACHE_PREFIX = 'qc_cache_v11_';
+// v12 invalidates records written before opaque movie identifiers and media
+// links were separated. Keeping those records can send a viewer to a stale
+// episode index after a security update.
+const API_CACHE_PREFIX = 'qc_cache_v12_';
 const KK_HOME = 'a';
 const KK_PHIM_BO = 'b';
 const KK_PHIM_LE = 'c';
@@ -465,22 +468,29 @@ function getMovieSlug(movieOrSlug) {
 }
 
 function movieApiParams(slug, movieId = '') {
-    return movieId ? { slug, m: movieId } : { slug };
+    // Prefer the encrypted movie id. Slugs remain only as a backward-
+    // compatible fallback for old bookmarks and locally stored history.
+    return movieId ? { m: movieId } : { slug };
 }
 
 function moviePageUrl(pageName, movieOrSlug, extra = {}) {
-    const params = new URLSearchParams({ slug: getMovieSlug(movieOrSlug), ...extra });
+    const params = new URLSearchParams(extra);
     const movieId = typeof movieOrSlug === 'object' && movieOrSlug ? String(movieOrSlug.movie_id || '') : '';
-    if (movieId) params.set('m', movieId);
+    if (movieId) {
+        params.set('m', movieId);
+    } else {
+        const slug = getMovieSlug(movieOrSlug);
+        if (slug) params.set('slug', slug);
+    }
     return `${pageName}?${params.toString()}`;
 }
 
 function createPlayerUrl(slug, episodeIndex = 0, serverIndex = 0, movieId = '') {
     const playerUrl = new URL(ROUTE_PLAYER, window.location.origin);
-    playerUrl.searchParams.set('slug', slug);
+    if (movieId) playerUrl.searchParams.set('m', movieId);
+    else if (slug) playerUrl.searchParams.set('slug', slug);
     playerUrl.searchParams.set('ep', String(Math.max(0, Number.parseInt(episodeIndex, 10) || 0)));
     playerUrl.searchParams.set('sv', String(Math.max(0, Number.parseInt(serverIndex, 10) || 0)));
-    if (movieId) playerUrl.searchParams.set('m', movieId);
     return `${playerUrl.pathname}${playerUrl.search}`;
 }
 
@@ -607,7 +617,14 @@ function getMoviePlaybackState(movie, episodeIndex = 0, serverIndex = null) {
     const resolvedServerIndex = getPreferredServerIndex(movie, serverIndex);
     const currentServer = episodes.length > resolvedServerIndex ? episodes[resolvedServerIndex] : null;
     const serverData = Array.isArray(currentServer?.server_data) ? currentServer.server_data : [];
-    const currentEpisode = serverData.length > episodeIndex ? serverData[episodeIndex] : null;
+    // Saved history can refer to an episode no longer present in a refreshed
+    // provider catalogue (for example, a single-film page stored as ep=1).
+    // Keep the player usable by selecting the nearest available episode.
+    const requestedEpisodeIndex = toPlaybackIndex(episodeIndex);
+    const resolvedEpisodeIndex = serverData.length
+        ? Math.min(requestedEpisodeIndex, serverData.length - 1)
+        : 0;
+    const currentEpisode = serverData.length > resolvedEpisodeIndex ? serverData[resolvedEpisodeIndex] : null;
     const hasEpisodeMetadata = episodes.some(server => {
         const data = Array.isArray(server?.server_data) ? server.server_data : [];
         return data.some(episode => !isPlaceholderEpisode(episode));
@@ -616,6 +633,7 @@ function getMoviePlaybackState(movie, episodeIndex = 0, serverIndex = null) {
     return {
         episodes,
         serverIndex: resolvedServerIndex,
+        episodeIndex: resolvedEpisodeIndex,
         currentServer,
         serverData,
         currentEpisode,
@@ -715,9 +733,9 @@ function bindPlayerFrameLoader(root) {
 }
 
 function warmMovieIntent(movie, options = {}) {
-    if (!movie || !movie.slug) return;
+    if (!movie || (!movie.movie_id && !movie.slug)) return;
 
-    const params = { slug: movie.slug };
+    const params = movieApiParams(movie.slug || '', movie.movie_id);
     if (options.immediate) {
         fetchAPI(KK_DETAILS, params);
         if (options.includeTmdbImages) fetchAPI(KK_IMAGES, params);
@@ -1165,16 +1183,22 @@ function initClientSecurityDeterrents() {
     };
 
     document.addEventListener('contextmenu', event => {
-        if (event.target?.closest?.('input, textarea, [contenteditable="true"]')) return;
         event.preventDefault();
+        event.stopImmediatePropagation();
         warnLimitedAction();
     }, true);
 
     document.addEventListener('dragstart', event => {
-        if (event.target.closest('img, video, iframe, .video-container')) {
-            event.preventDefault();
-        }
+        event.preventDefault();
+        event.stopImmediatePropagation();
     }, true);
+
+    ['selectstart', 'copy', 'cut'].forEach(eventName => {
+        document.addEventListener(eventName, event => {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }, true);
+    });
 
     document.addEventListener('keydown', event => {
         if (pageShield) {
@@ -1570,7 +1594,7 @@ const libraryManager = {
         if (!watchlist.some(m => (m.movie_id || m.slug) === movieId)) {
             watchlist.unshift({
                 movie_id: movieId,
-                slug: movie.slug,
+                slug: movie.slug || '',
                 name: movie.name,
                 origin_name: movie.origin_name,
                 thumb_url: movie.thumb_url,
@@ -1607,7 +1631,7 @@ const libraryManager = {
         
         filteredHistory.unshift({
             movie_id: movieId,
-            slug: movie.slug,
+            slug: movie.slug || '',
             name: movie.name,
             origin_name: movie.origin_name,
             thumb_url: movie.thumb_url,
@@ -2183,7 +2207,7 @@ function setupHeroSection(movie) {
     changeHeroBackground(backdrop);
 
     if (PREFETCH_CONFIG.tmdbHeroBackdropEnabled) {
-        fetchAPI(KK_IMAGES, { slug: movie.slug }).then(imageData => {
+        fetchAPI(KK_IMAGES, movieApiParams(movie.slug || '', movie.movie_id)).then(imageData => {
             if (imageData && imageData.data && imageData.data.images) {
                 const backdrops = imageData.data.images.filter(img => img.type === 'backdrop');
                 if (backdrops.length > 0) {
@@ -2212,7 +2236,7 @@ function setupHeroSection(movie) {
     elements.heroBtnInfo.onclick = (e) => {
         e.stopPropagation();
         warmMovieIntent(movie, { immediate: true, includeTmdbImages: true, withPosterImages: true });
-        navigateToPage(`phim.html?slug=${movie.slug}`);
+        navigateToPage(moviePageUrl('phim.html', movie));
     };
     if (shouldUsePassiveIntentPrefetch()) {
         elements.heroBtnInfo.onmouseenter = () => {
@@ -2784,9 +2808,10 @@ async function playMovie(movie, episodeIndex = 0, serverIndex = null) {
 
     const playback = getMoviePlaybackState(movie, episodeIndex, serverIndex);
     serverIndex = playback.serverIndex;
+    episodeIndex = playback.episodeIndex;
     let { episodes, serverData, currentEpisode } = playback;
 
-    const playerUrl = !playback.isUnavailable ? createPlayerUrl(movie.slug, episodeIndex, serverIndex, movie.movie_id) : null;
+    const playerUrl = !playback.isUnavailable ? createPlayerUrl(movie.slug || '', episodeIndex, serverIndex, movie.movie_id) : null;
 
     const movieName = movie.name;
     const epName = playerUrl && currentEpisode?.name ? currentEpisode.name : (playerUrl ? `Tập ${episodeIndex + 1}` : PLAYER_UPDATE_MESSAGE);
@@ -2815,7 +2840,7 @@ async function playMovie(movie, episodeIndex = 0, serverIndex = null) {
                 <h3 class="episode-title">Nguồn phát:</h3>
                 <div class="server-tabs">
                     ${episodes.map((server, idx) => `
-                        <button class="server-tab ${idx === serverIndex ? 'active' : ''}" onclick="changeEpisode('${movie.slug}', ${episodeIndex}, ${idx}, '${movie.movie_id || ''}')">
+                        <button class="server-tab ${idx === serverIndex ? 'active' : ''}" onclick="changeEpisode('', ${episodeIndex}, ${idx}, '${movie.movie_id || ''}')">
                             ${escapeHTML(server.server_name || `Server ${idx + 1}`)}
                         </button>
                     `).join('')}
@@ -2829,7 +2854,7 @@ async function playMovie(movie, episodeIndex = 0, serverIndex = null) {
         html += `
             <div class="episode-section">
                 <h3 class="episode-title">Chọn Tập Phim:</h3>
-                ${generateEpisodesHTML(movie.slug, serverData, episodeIndex, serverIndex, 'button', movie.movie_id || '')}
+                ${generateEpisodesHTML('', serverData, episodeIndex, serverIndex, 'button', movie.movie_id || '')}
             </div>
         `;
     }
@@ -3279,7 +3304,9 @@ function setupHeroSwitcher(movies) {
 
     elements.heroThumbs.innerHTML = '';
     movies.forEach((movie, index) => {
-        const thumbUrl = getImageUrl(movie.thumb_url || movie.poster_url, 'assets/logo.png', { width: 420, quality: 80 });
+        // Use the portrait artwork in the featured selector. A backdrop is
+        // normally wide and would force the poster to lose both side edges.
+        const thumbUrl = getImageUrl(movie.poster_url || movie.thumb_url, 'assets/logo.png', { width: 420, quality: 80 });
         const year = movie.year || 'N/A';
         const quality = movie.quality || 'HD';
         const name = escapeHTML(movie.name);
@@ -3324,7 +3351,7 @@ function setupHeroSwitcher(movies) {
     setupHeroSection(movies[startIndex]);
     warmMovieIntent(movies[startIndex], { priority: 9, includeTmdbImages: true, withPosterImages: true });
     const nextHeroMovie = movies[(startIndex + 1) % movies.length];
-    if (nextHeroMovie && nextHeroMovie.slug !== movies[startIndex].slug) {
+    if (nextHeroMovie && nextHeroMovie.movie_id !== movies[startIndex].movie_id) {
         warmMovieIntent(nextHeroMovie, { priority: 4, withPosterImages: true });
     }
 
@@ -3504,7 +3531,7 @@ function renderMovieDetailsPage(movie, tmdbBackdrop = null, tmdbPoster = null) {
             const serverData = server.server_data || [];
             episodesHtml += `
                 <div class="detail-episode-grid ${sIdx === displayServerIndex ? '' : 'hidden'}" id="detailEpisodeGrid-${sIdx}">
-                    ${generateEpisodesHTML(movie.slug, serverData, -1, sIdx, 'link', movie.movie_id || '')}
+                    ${generateEpisodesHTML('', serverData, -1, sIdx, 'link', movie.movie_id || '')}
                 </div>
             `;
         });
@@ -3658,9 +3685,10 @@ async function renderMoviePlayerPage(movie, episodeIndex = 0, serverIndex = null
 
     const playback = getMoviePlaybackState(movie, episodeIndex, serverIndex);
     serverIndex = playback.serverIndex;
+    episodeIndex = playback.episodeIndex;
     let { episodes, serverData, currentEpisode } = playback;
 
-    const playerUrl = !playback.isUnavailable ? createPlayerUrl(movie.slug, episodeIndex, serverIndex, movie.movie_id) : null;
+    const playerUrl = !playback.isUnavailable ? createPlayerUrl(movie.slug || '', episodeIndex, serverIndex, movie.movie_id) : null;
 
     const movieName = movie.name;
     const epName = playerUrl && currentEpisode?.name ? currentEpisode.name : (playerUrl ? `Tập ${episodeIndex + 1}` : PLAYER_UPDATE_MESSAGE);
@@ -3683,7 +3711,7 @@ async function renderMoviePlayerPage(movie, episodeIndex = 0, serverIndex = null
                             Tập phim hiện tại: <span style="color: var(--primary); font-weight: 600;">${escapeHTML(epName)}</span>
                         </p>
                     </div>
-                    <a href="phim.html?slug=${movie.slug}" class="btn btn-sm btn-outline" style="text-decoration:none;">
+                    <a href="${moviePageUrl('phim.html', movie)}" class="btn btn-sm btn-outline" style="text-decoration:none;">
                         <i data-lucide="info"></i> Chi tiết phim
                     </a>
                 </div>
@@ -3700,7 +3728,7 @@ async function renderMoviePlayerPage(movie, episodeIndex = 0, serverIndex = null
                 <h3 class="episode-title" style="font-size: 1.1rem; font-weight: 700; margin-bottom: 1rem;">Nguồn phát:</h3>
                 <div class="server-tabs">
                     ${episodes.map((server, idx) => `
-                        <button class="server-tab ${idx === serverIndex ? 'active' : ''}" onclick="changeEpisode('${movie.slug}', ${episodeIndex}, ${idx}, '${movie.movie_id || ''}')">
+                        <button class="server-tab ${idx === serverIndex ? 'active' : ''}" onclick="changeEpisode('', ${episodeIndex}, ${idx}, '${movie.movie_id || ''}')">
                             ${escapeHTML(server.server_name || `Server ${idx + 1}`)}
                         </button>
                     `).join('')}
@@ -3713,7 +3741,7 @@ async function renderMoviePlayerPage(movie, episodeIndex = 0, serverIndex = null
         html += `
             <div class="episode-section" style="margin-top:2rem;">
                 <h3 class="episode-title" style="font-size: 1.1rem; font-weight: 700; margin-bottom: 1rem;">Chọn Tập Phim:</h3>
-                ${generateEpisodesHTML(movie.slug, serverData, episodeIndex, serverIndex, 'button', movie.movie_id || '')}
+                ${generateEpisodesHTML('', serverData, episodeIndex, serverIndex, 'button', movie.movie_id || '')}
             </div>
         `;
     }
@@ -3764,7 +3792,11 @@ function loadLibraryPage() {
 // =========================================================================
 function generateEpisodesHTML(movieSlug, serverData, activeEpIndex, serverIndex, mode = 'button', movieId = '') {
     if (!serverData || serverData.length === 0) return '';
-    const movieQuery = movieId ? `&m=${encodeURIComponent(movieId)}` : '';
+    const createEpisodeUrl = episodeIndex => moviePageUrl(
+        'xem-phim.html',
+        movieId ? { movie_id: movieId } : movieSlug,
+        { ep: episodeIndex, sv: serverIndex }
+    );
 
     const totalEpisodes = serverData.length;
 
@@ -3777,7 +3809,7 @@ function generateEpisodesHTML(movieSlug, serverData, activeEpIndex, serverIndex,
                     const activeClass = idx === activeEpIndex ? 'active' : '';
                     if (mode === 'link') {
                         return `
-                            <a href="xem-phim.html?slug=${encodeURIComponent(movieSlug)}&ep=${idx}&sv=${serverIndex}${movieQuery}" class="episode-btn ${activeClass}" style="text-decoration: none; text-align: center;">
+                            <a href="${createEpisodeUrl(idx)}" class="episode-btn ${activeClass}" style="text-decoration: none; text-align: center;">
                                 ${escapeHTML(displayName)}
                             </a>
                         `;
@@ -3835,7 +3867,7 @@ function generateEpisodesHTML(movieSlug, serverData, activeEpIndex, serverIndex,
                     const activeClass = idx === activeEpIndex ? 'active' : '';
                     if (mode === 'link') {
                         return `
-                            <a href="xem-phim.html?slug=${encodeURIComponent(movieSlug)}&ep=${idx}&sv=${serverIndex}${movieQuery}" class="episode-btn ${activeClass}" style="text-decoration: none; text-align: center;">
+                            <a href="${createEpisodeUrl(idx)}" class="episode-btn ${activeClass}" style="text-decoration: none; text-align: center;">
                                 ${escapeHTML(displayName)}
                             </a>
                         `;
@@ -4167,9 +4199,11 @@ function prefetchLinkResources(urlStr) {
             }
         } else if (pageName === 'phim' || pageName === 'xem-phim') {
             const slug = params.get('slug');
-            if (slug) {
-                queueApiPrefetch(KK_DETAILS, { slug }, { priority: 10 });
-                queueApiPrefetch(KK_IMAGES, { slug }, { priority: 9 });
+            const movieId = params.get('m') || '';
+            if (movieId || slug) {
+                const movieParams = movieApiParams(slug || '', movieId);
+                queueApiPrefetch(KK_DETAILS, movieParams, { priority: 10 });
+                queueApiPrefetch(KK_IMAGES, movieParams, { priority: 9 });
             }
         }
     } catch (e) {
@@ -4454,8 +4488,8 @@ function runPageRouting(url) {
         const slug = urlParams.get('slug');
         const movieId = urlParams.get('m') || '';
         highlightNav(null);
-        if (slug) {
-            return fetchMovieDetailsPage(slug, movieId);
+        if (movieId || slug) {
+            return fetchMovieDetailsPage(slug || '', movieId);
         } else {
             showToast('Không tìm thấy thông tin phim!', 'error');
             setTimeout(() => navigateToPage('index.html'), 2000);
@@ -4466,8 +4500,8 @@ function runPageRouting(url) {
         const movieId = urlParams.get('m') || '';
         const hasEpisodeInUrl = urlParams.has('ep');
         const hasServerInUrl = urlParams.has('sv');
-        const resumePlayback = slug && (!hasEpisodeInUrl || !hasServerInUrl)
-            ? getResumePlayback({ slug, movie_id: movieId })
+        const resumePlayback = (movieId || slug) && (!hasEpisodeInUrl || !hasServerInUrl)
+            ? getResumePlayback({ slug: slug || '', movie_id: movieId })
             : null;
         const useResumePlayback = Boolean(resumePlayback?.isSaved);
         const epIndex = useResumePlayback
@@ -4477,8 +4511,8 @@ function runPageRouting(url) {
             ? resumePlayback.serverIndex
             : (hasServerInUrl ? toPlaybackIndex(urlParams.get('sv')) : null);
         highlightNav(null);
-        if (slug) {
-            return playMovieFromSlugPage(slug, epIndex, svIndex, movieId);
+        if (movieId || slug) {
+            return playMovieFromSlugPage(slug || '', epIndex, svIndex, movieId);
         } else {
             showToast('Không tìm thấy thông tin phim!', 'error');
             setTimeout(() => navigateToPage('index.html'), 2000);

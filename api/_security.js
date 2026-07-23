@@ -8,17 +8,16 @@ const LOCAL_PLAYER_TOKEN_SECRET = 'quanchill-local-player-secret-change-me';
 const LOCAL_SECURITY_LOCK_SECRET = 'quanchill-local-security-lock-secret-change-me';
 const PLAYER_TOKEN_SECRET = process.env.PLAYER_TOKEN_SECRET || (IS_PRODUCTION ? '' : LOCAL_PLAYER_TOKEN_SECRET);
 const PLAYER_TOKEN_TTL_SECONDS = Math.max(30, Number(process.env.PLAYER_TOKEN_TTL_SECONDS || 300));
-// Third-party embed players can expose their own branding, diagnostics and
-// source URLs. Keep them disabled by default; enabling this is an explicit
-// compatibility trade-off, not a security feature.
-const ALLOW_EXTERNAL_EMBED_FALLBACK = process.env.ALLOW_EXTERNAL_EMBED_FALLBACK === 'true';
 const HLS_VALIDATION_TIMEOUT_MS = Math.max(800, Number(process.env.HLS_VALIDATION_TIMEOUT_MS || 2200));
 // API responses may be kept in the browser cache for up to 15 days.  Keep image
 // links valid longer than that window so a cached catalogue never contains
 // already-expired image URLs.
 const IMAGE_TOKEN_TTL_SECONDS = Math.max(2592000, Number(process.env.IMAGE_TOKEN_TTL_SECONDS || 2592000));
 const ENABLE_STREAM_PROXY = process.env.ENABLE_STREAM_PROXY === 'true' && process.env.ALLOW_HIGH_BANDWIDTH_STREAM_PROXY === 'true';
-const ENABLE_IMAGE_PROXY = process.env.ENABLE_IMAGE_PROXY === 'true' && process.env.ALLOW_HIGH_BANDWIDTH_IMAGE_PROXY === 'true';
+// Images are part of the public response too. Always proxy them by default so
+// a catalogue payload or an <img> element never discloses the image provider.
+// Set this explicitly to false only for a trusted local diagnostic session.
+const ENABLE_IMAGE_PROXY = process.env.ENABLE_IMAGE_PROXY !== 'false';
 const SECURITY_LOCK_SECRET = process.env.SECURITY_LOCK_SECRET || (IS_PRODUCTION ? '' : LOCAL_SECURITY_LOCK_SECRET);
 const SECURITY_LOCK_COOKIE_NAME = 'qc_security_lock';
 const SECURITY_LOCK_SECONDS = Math.min(300, Math.max(5, Number(process.env.SECURITY_LOCK_SECONDS || 20)));
@@ -630,10 +629,6 @@ function escapeHtml(value = '') {
     }[char]));
 }
 
-function escapeAttr(value = '') {
-    return escapeHtml(value).replace(/`/g, '&#096;');
-}
-
 function createEpisodeSourceCandidate(episode, episodeIndex, serverIndex, provider = 'kkphim') {
     if (!episode) return null;
 
@@ -781,14 +776,9 @@ async function finalizeEpisodeSource(fetchImpl, candidate) {
     if (!candidate) return null;
 
     if (candidate.hlsUrl) {
-        if (!ENABLE_STREAM_PROXY) {
-            return {
-                ...candidate,
-                url: candidate.hlsUrl,
-                type: 'hls-direct',
-                fallbackReason: 'stream-proxy-disabled'
-            };
-        }
+        // A direct HLS URL is visible to the browser, so it must never be a
+        // compatibility fallback when the private stream proxy is disabled.
+        if (!ENABLE_STREAM_PROXY) return null;
 
         const canProxyHls = await canProxyHlsSource(fetchImpl, candidate.hlsUrl, candidate.provider);
         if (canProxyHls) {
@@ -799,29 +789,7 @@ async function finalizeEpisodeSource(fetchImpl, candidate) {
             };
         }
 
-        if (candidate.embedUrl && ALLOW_EXTERNAL_EMBED_FALLBACK) {
-            return {
-                ...candidate,
-                url: candidate.embedUrl,
-                type: 'embed',
-                fallbackReason: 'hls-proxy-unavailable'
-            };
-        }
-
-        return {
-            ...candidate,
-            url: candidate.hlsUrl,
-            type: 'hls-direct',
-            fallbackReason: 'hls-proxy-unavailable'
-        };
-    }
-
-    if (candidate.embedUrl && ALLOW_EXTERNAL_EMBED_FALLBACK) {
-        return {
-            ...candidate,
-            url: candidate.embedUrl,
-            type: 'embed'
-        };
+        return null;
     }
 
     return null;
@@ -868,8 +836,8 @@ async function resolveEpisodeSource(fetchImpl, options) {
 }
 
 function renderPlayerHtml(source = {}, slug, epIndex, svIndex, movieId = '') {
-    const title = `${source.movieName || 'Quán Chill'} - ${source.episodeName || ''}`.trim();
-    const safeTitle = escapeHtml(title);
+    // The player response must not become a movie metadata endpoint.
+    const safeTitle = 'Quán Chill';
     const unavailableMessage = source.message || PLAYER_UNAVAILABLE_MESSAGE;
     const noSourceMessage = `<div class="message"><div><strong>${escapeHtml(unavailableMessage)}</strong><p>Vui lòng quay lại sau.</p></div></div>`;
     const statusScript = status => `
@@ -887,14 +855,13 @@ function renderPlayerHtml(source = {}, slug, epIndex, svIndex, movieId = '') {
     let playerMarkup = noSourceMessage;
     let scriptMarkup = statusScript('error');
 
-    if (source.url && (source.type === 'hls' || source.type === 'hls-direct' || isHlsUrl(source.url))) {
-        const streamUrl = source.type === 'hls-direct'
-            ? source.url
-            : `/api/stream?t=${encodeURIComponent(createSignedToken(source.url, PLAYER_TOKEN_TTL_SECONDS, 'stream'))}`;
+    if (source.url && source.type === 'hls') {
+        const streamUrl = `/api/stream?t=${encodeURIComponent(createSignedToken(source.url, PLAYER_TOKEN_TTL_SECONDS, 'stream'))}`;
         playerMarkup = `
             <video id="moviePlayer" controls autoplay playsinline preload="metadata"
                 controlsList="nodownload noplaybackrate noremoteplayback"
                 disablepictureinpicture
+                disableremoteplayback
                 referrerpolicy="no-referrer"></video>
         `;
         scriptMarkup = `
@@ -903,12 +870,28 @@ function renderPlayerHtml(source = {}, slug, epIndex, svIndex, movieId = '') {
                 (function () {
                     var video = document.getElementById('moviePlayer');
                     var source = ${JSON.stringify(streamUrl)};
-                    var embedFallback = ${JSON.stringify(ALLOW_EXTERNAL_EMBED_FALLBACK ? (source.embedUrl || '') : '')};
-                    var slug = ${JSON.stringify(slug || '')};
-                    var movieKey = ${JSON.stringify(movieId || slug || '')};
+                    var movieKey = ${JSON.stringify(movieId || '')};
                     var ep = ${JSON.stringify(epIndex !== undefined ? String(epIndex) : '')};
                     var sv = ${JSON.stringify(svIndex !== undefined ? String(svIndex) : '')};
                     if (!video) return;
+
+                    function blockInspectionInteraction(event) {
+                        event.preventDefault();
+                        event.stopImmediatePropagation();
+                        return false;
+                    }
+
+                    ['contextmenu', 'dragstart', 'selectstart', 'copy', 'cut'].forEach(function (eventName) {
+                        document.addEventListener(eventName, blockInspectionInteraction, true);
+                    });
+                    document.addEventListener('keydown', function (event) {
+                        var key = String(event.key || '').toLowerCase();
+                        if (key === 'f12' ||
+                            ((event.ctrlKey || event.metaKey) && (key === 'u' || key === 's' || key === 'p')) ||
+                            ((event.ctrlKey || event.metaKey) && event.shiftKey && (key === 'i' || key === 'j' || key === 'c'))) {
+                            blockInspectionInteraction(event);
+                        }
+                    }, true);
 
                     function postPlayerStatus(status, message) {
                         try {
@@ -920,50 +903,19 @@ function renderPlayerHtml(source = {}, slug, epIndex, svIndex, movieId = '') {
                     }
 
                     var readyPosted = false;
-                    var startupFallbackTimer = null;
-                    function clearStartupFallbackTimer() {
-                        if (!startupFallbackTimer) return;
-                        clearTimeout(startupFallbackTimer);
-                        startupFallbackTimer = null;
-                    }
 
                     function postReady() {
                         if (readyPosted) return;
                         readyPosted = true;
-                        clearStartupFallbackTimer();
                         postPlayerStatus('ready');
                     }
 
-                    var embedFallbackStarted = false;
-                    function loadEmbedFallback() {
-                        if (!embedFallback || embedFallbackStarted) return false;
-                        embedFallbackStarted = true;
-                        clearStartupFallbackTimer();
-                        postPlayerStatus('loading');
-                        var frame = document.createElement('iframe');
-                        frame.id = 'embedPlayer';
-                        frame.src = embedFallback;
-                        frame.title = ${JSON.stringify(title)};
-                        frame.allow = 'autoplay';
-                        frame.allowFullscreen = false;
-                        frame.referrerPolicy = 'no-referrer';
-                        frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms');
-                        frame.addEventListener('load', postReady);
-                        video.replaceWith(frame);
-                        return true;
-                    }
-
                     postPlayerStatus('loading');
-                    if (embedFallback) {
-                        startupFallbackTimer = setTimeout(function () {
-                            if (!readyPosted) loadEmbedFallback();
-                        }, 12000);
-                    }
 
                     var savedProgress = null;
-                    if (slug && ep !== '') {
+                    if (movieKey && ep !== '') {
                         try {
-                            var progressData = localStorage.getItem('watchProgress_' + movieKey) || localStorage.getItem('watchProgress_' + slug);
+                            var progressData = localStorage.getItem('watchProgress_' + movieKey);
                             if (progressData) {
                                 var parsedProgress = JSON.parse(progressData);
                                 var parsedTime = Number(parsedProgress && parsedProgress.time);
@@ -981,9 +933,12 @@ function renderPlayerHtml(source = {}, slug, epIndex, svIndex, movieId = '') {
                         }
                     }
 
-                    if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                        video.src = source;
-                    } else if (window.Hls && window.Hls.isSupported()) {
+                    // Chromium can report that native HLS is playable even
+                    // though it cannot reliably follow this provider's
+                    // multi-level playlists. Prefer hls.js whenever Media
+                    // Source Extensions are available; Safari and other
+                    // native-only browsers still use the native path below.
+                    if (window.Hls && window.Hls.isSupported()) {
                         var hls = new window.Hls({
                             enableWorker: true,
                             lowLatencyMode: false,
@@ -991,9 +946,7 @@ function renderPlayerHtml(source = {}, slug, epIndex, svIndex, movieId = '') {
                         });
                         hls.on(window.Hls.Events.ERROR, function (_event, data) {
                             if (data && data.fatal) {
-                                if (!loadEmbedFallback()) {
-                                    postPlayerStatus('error', ${JSON.stringify(PLAYER_UNAVAILABLE_MESSAGE)});
-                                }
+                                postPlayerStatus('error', ${JSON.stringify(PLAYER_UNAVAILABLE_MESSAGE)});
                             }
                         });
                         hls.on(window.Hls.Events.MANIFEST_PARSED, function () {
@@ -1001,6 +954,8 @@ function renderPlayerHtml(source = {}, slug, epIndex, svIndex, movieId = '') {
                         });
                         hls.loadSource(source);
                         hls.attachMedia(video);
+                    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                        video.src = source;
                     } else {
                         video.outerHTML = ${JSON.stringify(noSourceMessage)};
                         postPlayerStatus('error', ${JSON.stringify(PLAYER_UNAVAILABLE_MESSAGE)});
@@ -1061,9 +1016,7 @@ function renderPlayerHtml(source = {}, slug, epIndex, svIndex, movieId = '') {
                         }
                     });
                     video.addEventListener('error', function () {
-                        if (!loadEmbedFallback()) {
-                            postPlayerStatus('error', ${JSON.stringify(PLAYER_UNAVAILABLE_MESSAGE)});
-                        }
+                        postPlayerStatus('error', ${JSON.stringify(PLAYER_UNAVAILABLE_MESSAGE)});
                     });
 
                     // Persist periodically and again when this iframe is closed.
@@ -1071,7 +1024,7 @@ function renderPlayerHtml(source = {}, slug, epIndex, svIndex, movieId = '') {
                     // seeking or before the three-second interval has elapsed.
                     var lastSaveTime = 0;
                     function saveProgress(force) {
-                        if (!slug || ep === '') return;
+                        if (!movieKey || ep === '') return;
                         var now = Date.now();
                         if (!force && now - lastSaveTime < 3000) return;
 
@@ -1107,37 +1060,6 @@ function renderPlayerHtml(source = {}, slug, epIndex, svIndex, movieId = '') {
                         if (document.visibilityState === 'hidden') saveProgress(true);
                     });
 
-                    document.addEventListener('contextmenu', function (event) { event.preventDefault(); }, true);
-                }());
-            </script>
-        `;
-    } else if (source.url && source.type === 'embed' && ALLOW_EXTERNAL_EMBED_FALLBACK) {
-        playerMarkup = `
-            <iframe id="embedPlayer" src="${escapeAttr(source.url)}"
-                title="${safeTitle}"
-                allow="autoplay"
-                referrerpolicy="no-referrer"
-                sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
-        `;
-        scriptMarkup = `
-            <script>
-                (function () {
-                    function postPlayerStatus(status, message) {
-                        try {
-                            window.parent.postMessage({
-                                type: 'qc-player-' + status,
-                                message: message || ''
-                            }, window.location.origin);
-                        } catch (e) {}
-                    }
-
-                    var frame = document.getElementById('embedPlayer');
-                    postPlayerStatus('loading');
-                    if (frame) {
-                        frame.addEventListener('load', function () {
-                            postPlayerStatus('ready');
-                        });
-                    }
                 }());
             </script>
         `;

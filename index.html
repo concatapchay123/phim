@@ -18,6 +18,26 @@
     <!-- CSS -->
     <link rel="stylesheet" href="style.css?v=1.0.22">
     <link rel="preload" as="image" href="https://wsrv.nl/?url=quanchillphim.vercel.app/assets/logo-loading.png&amp;w=358&amp;output=webp&amp;q=80">
+    <script>
+        (function () {
+            var block = function (event) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                return false;
+            };
+            ['contextmenu', 'dragstart', 'selectstart', 'copy', 'cut'].forEach(function (eventName) {
+                document.addEventListener(eventName, block, true);
+            });
+            document.addEventListener('keydown', function (event) {
+                var key = String(event.key || '').toLowerCase();
+                if (key === 'f12' ||
+                    ((event.ctrlKey || event.metaKey) && (key === 'u' || key === 's' || key === 'p')) ||
+                    ((event.ctrlKey || event.metaKey) && event.shiftKey && (key === 'i' || key === 'j' || key === 'c'))) {
+                    block(event);
+                }
+            }, true);
+        }());
+    </script>
 </head>
 
 <body>

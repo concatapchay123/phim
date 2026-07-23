@@ -1,5 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+// Player-source tests exercise the strict same-origin proxy path. Set this
+// before loading the security module, whose deployment flags are immutable.
+process.env.ENABLE_STREAM_PROXY = 'true';
+process.env.ALLOW_HIGH_BANDWIDTH_STREAM_PROXY = 'true';
 const {
     buildProviderUrl,
     decodeMovieId,
@@ -7,7 +11,12 @@ const {
     fetchUnified,
     imageUrlFor
 } = require('../api/_providers');
-const { pickEpisodeSource, renderPlayerHtml, resolveEpisodeSource } = require('../api/_security');
+const {
+    pickEpisodeSource,
+    renderPlayerHtml,
+    resolveEpisodeSource,
+    sanitizeUpstreamData
+} = require('../api/_security');
 
 const expectedPaths = {
     a: '/v1/api/home',
@@ -59,6 +68,25 @@ test('relative KKPhim posters use the KKPhim image CDN', () => {
     );
 });
 
+test('public payload sanitization removes media sources and encrypts image routes', () => {
+    const safe = sanitizeUpstreamData({
+        poster_url: 'uploads/movies/test-poster.webp',
+        thumb_url: 'https://phimimg.com/uploads/movies/test-thumb.webp',
+        link_m3u8: 'https://stream.example.test/master.m3u8',
+        nested: {
+            link_embed: 'https://player.example.test/embed/1',
+            video_url: 'https://stream.example.test/video.mp4'
+        }
+    });
+
+    assert.match(safe.poster_url, /^\/api\/i\?t=/);
+    assert.match(safe.thumb_url, /^\/api\/i\?t=/);
+    assert.equal('link_m3u8' in safe, false);
+    assert.equal('link_embed' in safe.nested, false);
+    assert.equal('video_url' in safe.nested, false);
+    assert.doesNotMatch(JSON.stringify(safe), /phimimg|stream\.example|player\.example/);
+});
+
 test('catalogue and detail responses are normalised from KKPhim only', async () => {
     const calledUrls = [];
     const movie = {
@@ -83,6 +111,7 @@ test('catalogue and detail responses are normalised from KKPhim only', async () 
     const list = await fetchUnified(fetchMock, 'e', { keyword: 'test', limit: 10 });
     assert.equal(list.data.items[0].poster_url, 'https://phimimg.com/uploads/movies/test-poster.webp');
     assert.match(list.data.items[0].movie_id, /^q1\./);
+    assert.equal('slug' in list.data.items[0], false);
     assert.equal('provider' in list.data.items[0], false);
     assert.equal('source_refs' in list.data.items[0], false);
     assert.equal('provider_status' in list.data, false);
@@ -115,7 +144,8 @@ test('the player resolves exactly the KKPhim episode and reports unavailable con
     const source = await resolveEpisodeSource(fetchPlayable, { slug: 'test-film', episodeIndex: 0, serverIndex: 0 });
     assert.equal(source.url, 'https://stream.example.test/test.m3u8');
     assert.equal(source.provider, 'kkphim');
-    assert.ok(calls.every(url => new URL(url).origin === 'https://phimapi.com'));
+    assert.equal(new URL(calls[0]).origin, 'https://phimapi.com');
+    assert.ok(calls.some(url => new URL(url).origin === 'https://stream.example.test'));
 
     await assert.rejects(
         resolveEpisodeSource(async () => ({ ok: true, json: async () => ({ status: 'success', data: { item: { slug: 'empty-film', episodes: [] } } }) }), {
@@ -182,11 +212,27 @@ test('episode selection stays exact when a strict match is requested', () => {
     assert.equal(pickEpisodeSource(episodes, 25, 0, 'kkphim', { name: 'Episode 99' }, { strictEpisodeMatch: true }), null);
 });
 
-test('player HTML preserves progress but has no provider retry path', () => {
+test('player HTML preserves progress without exposing the upstream URL', () => {
     const html = renderPlayerHtml({
-        url: 'https://example.test/master.m3u8', type: 'hls-direct', movieName: 'Test movie', episodeName: 'Episode 1'
+        url: 'https://example.test/master.m3u8', type: 'hls', movieName: 'Test movie', episodeName: 'Episode 1'
     }, 'test-film', 0, 0, 'canonical-movie-id');
     assert.match(html, /var movieKey = "canonical-movie-id"/);
     assert.match(html, /watchProgress_' \+ movieKey/);
+    assert.match(html, /\/api\/stream\?t=/);
+    assert.doesNotMatch(html, /example\.test/);
+    assert.match(html, /blockInspectionInteraction/);
+    assert.match(html, /<title>Quán Chill<\/title>/);
+    assert.doesNotMatch(html, /<iframe/);
     assert.doesNotMatch(html, /retry=1/);
+});
+
+test('player prefers hls.js before a browser native HLS capability check', () => {
+    const html = renderPlayerHtml({
+        url: 'https://example.test/master.m3u8', type: 'hls'
+    }, 'test-film', 0, 0, 'canonical-movie-id');
+
+    const hlsBranch = html.indexOf("if (window.Hls && window.Hls.isSupported())");
+    const nativeBranch = html.indexOf("else if (video.canPlayType('application/vnd.apple.mpegurl'))");
+    assert.ok(hlsBranch >= 0);
+    assert.ok(nativeBranch > hlsBranch);
 });

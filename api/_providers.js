@@ -175,10 +175,17 @@ function normaliseMovie(movie) {
     if (!movie || typeof movie !== 'object') return null;
     const slug = normalizeSlug(movie.slug);
     const source = { provider: 'kkphim', slug };
-    const { provider: _provider, source_refs: _sourceRefs, ...publicMovie } = movie;
+    // The source slug is only for the server to resolve a provider record.
+    // Do not include it in public JSON: clients navigate with movie_id, an
+    // authenticated opaque identifier that carries no provider reference.
+    const {
+        slug: _slug,
+        provider: _provider,
+        source_refs: _sourceRefs,
+        ...publicMovie
+    } = movie;
     return {
         ...publicMovie,
-        slug,
         poster_url: imageUrlFor('kkphim', movie.poster_url),
         thumb_url: imageUrlFor('kkphim', movie.thumb_url),
         movie_id: encodeMovieId([source])
@@ -212,7 +219,11 @@ async function resolveMovie(fetchImpl, params = {}) {
     const rawMovie = payloadMovie(result.payload);
     if (!rawMovie) throw createHttpError('Movie not found', 404);
     const movie = normaliseMovie(rawMovie);
-    return { movie, sourceMovie: { provider: 'kkphim', movie: rawMovie, payload: result.payload } };
+    return {
+        movie,
+        sourceSlug: slug,
+        sourceMovie: { provider: 'kkphim', movie: rawMovie, payload: result.payload }
+    };
 }
 
 async function fetchUnified(fetchImpl, kindValue, params = {}) {
@@ -226,7 +237,7 @@ async function fetchUnified(fetchImpl, kindValue, params = {}) {
 
     if (DETAIL_KINDS.has(kind)) {
         const resolved = await resolveMovie(fetchImpl, params);
-        const primary = await fetchProvider(fetchImpl, 'kkphim', kind, { slug: resolved.movie.slug });
+        const primary = await fetchProvider(fetchImpl, 'kkphim', kind, { slug: resolved.sourceSlug });
         const { provider: _provider, provider_status: _providerStatus, source_refs: _sourceRefs, ...publicData } = primary.payload?.data || {};
         return { status: 'success', message: '', data: { ...publicData, movie_id: resolved.movie.movie_id } };
     }

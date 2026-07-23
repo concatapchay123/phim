@@ -3529,6 +3529,7 @@ html[data-theme="light"] .logo:hover .logo-chill {
     border: 2px solid rgba(255, 255, 255, 0.2);
     cursor: pointer;
     transition: all 0.3s ease;
+    overflow: visible;
 }
 .hero-thumb-item:hover {
     border-color: rgba(255, 255, 255, 0.8);
@@ -3539,9 +3540,11 @@ html[data-theme="light"] .logo:hover .logo-chill {
     box-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
 }
 .hero-thumb-img {
-    width: 72px;
-    height: 42px;
-    object-fit: cover;
+    width: 58px;
+    height: 82px;
+    /* Featured posters are portrait artwork. Contain keeps the complete
+       image visible instead of cutting its top, bottom, or side edges. */
+    object-fit: contain;
     border-radius: 3px;
     background-color: var(--bg-surface);
     transition: transform 0.3s ease;

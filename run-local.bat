@@ -2,6 +2,10 @@
 setlocal EnableExtensions EnableDelayedExpansion
 
 if "%PORT%"=="" set "PORT=3000"
+rem Strict playback requires the same-origin stream proxy. These defaults keep
+rem the local preview private while production continues to use its own env.
+if "%ENABLE_STREAM_PROXY%"=="" set "ENABLE_STREAM_PROXY=true"
+if "%ALLOW_HIGH_BANDWIDTH_STREAM_PROXY%"=="" set "ALLOW_HIGH_BANDWIDTH_STREAM_PROXY=true"
 
 echo ==================================================
 echo   KHOI DONG TRANG XEM PHIM LOCAL
